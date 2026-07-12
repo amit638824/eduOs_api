@@ -15,7 +15,7 @@
  *   From project root (Windows):
  *   .\scripts\setup-phase1.ps1
  *
- * DEFAULT PASSWORD (all demo users): Password@123
+ * DEFAULT PASSWORD (all demo users): Test@12345
  *
  * DEMO LOGINS
  *   student1@edutech.com   → Student dashboard
@@ -32,7 +32,7 @@ import type { PoolClient } from 'pg';
 import { pool, withTransaction } from '../config/database.js';
 import { hashPassword } from '../utils/security.js';
 
-const SEED_PASSWORD = 'Password@123';
+const SEED_PASSWORD = 'Test@12345';
 const SEED_DIR = path.resolve(process.cwd(), 'database/seed');
 
 // ---------------------------------------------------------------------------

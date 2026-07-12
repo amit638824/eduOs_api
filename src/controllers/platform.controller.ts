@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { vQuery, vParams } from '../middleware/validate.js';
 import * as deptService from '../services/department.service.js';
 import * as sessionService from '../services/academicSession.service.js';
 import * as adminUserService from '../services/adminUser.service.js';
@@ -8,12 +9,13 @@ import * as settingsService from '../services/settings.service.js';
 import * as auditService from '../services/audit.service.js';
 import * as reportService from '../services/report.service.js';
 import * as orgService from '../services/organization.service.js';
-import { requireOrgId } from '../utils/orgAccess.js';
+import { requireOrgId, resolveOrganizationId } from '../utils/orgAccess.js';
 
-function orgContext(req: Request) {
+async function orgContext(req: Request) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
+  const orgId = await resolveOrganizationId(req.user!.organizationId, isSuperAdmin);
   return {
-    orgId: requireOrgId(req.user!.organizationId),
+    orgId,
     isSuperAdmin,
     requesterOrgId: req.user!.organizationId,
     userId: req.user!.id,
@@ -22,9 +24,9 @@ function orgContext(req: Request) {
 
 export async function listDepartments(req: Request, res: Response, next: NextFunction) {
   try {
-    const { branchId } = req.params as { branchId: string };
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { branchId } = vParams(req) as { branchId: string };
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     await orgService.getBranchById(branchId);
     if (!isSuperAdmin) {
       const branch = await orgService.getBranchById(branchId);
@@ -39,8 +41,8 @@ export async function listDepartments(req: Request, res: Response, next: NextFun
 
 export async function createDepartment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { branchId } = req.params as { branchId: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { branchId } = vParams(req) as { branchId: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const dept = await deptService.createDepartment(branchId, req.body, requesterOrgId, isSuperAdmin);
     res.status(201).json({ success: true, data: dept });
   } catch (e) {
@@ -50,8 +52,8 @@ export async function createDepartment(req: Request, res: Response, next: NextFu
 
 export async function updateDepartment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const dept = await deptService.updateDepartment(id, req.body, requesterOrgId, isSuperAdmin);
     res.json({ success: true, data: dept });
   } catch (e) {
@@ -61,8 +63,8 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
 
 export async function deleteDepartment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const result = await deptService.deleteDepartment(id, requesterOrgId, isSuperAdmin);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -72,8 +74,8 @@ export async function deleteDepartment(req: Request, res: Response, next: NextFu
 
 export async function listAcademicSessions(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId } = orgContext(req);
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { orgId } = await orgContext(req);
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const result = await sessionService.listAcademicSessions(orgId, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
@@ -83,7 +85,7 @@ export async function listAcademicSessions(req: Request, res: Response, next: Ne
 
 export async function createAcademicSession(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const session = await sessionService.createAcademicSession(
       orgId,
       req.body,
@@ -98,8 +100,8 @@ export async function createAcademicSession(req: Request, res: Response, next: N
 
 export async function updateAcademicSession(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const session = await sessionService.updateAcademicSession(
       id,
       req.body,
@@ -114,8 +116,8 @@ export async function updateAcademicSession(req: Request, res: Response, next: N
 
 export async function deleteAcademicSession(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const result = await sessionService.deleteAcademicSession(id, requesterOrgId, isSuperAdmin);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -125,8 +127,8 @@ export async function deleteAcademicSession(req: Request, res: Response, next: N
 
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId } = orgContext(req);
-    const { page, limit, role, search } = req.query as unknown as {
+    const { orgId } = await orgContext(req);
+    const { page, limit, role, search } = vQuery(req) as unknown as {
       page: number;
       limit: number;
       role?: string;
@@ -141,7 +143,7 @@ export async function listUsers(req: Request, res: Response, next: NextFunction)
 
 export async function createUser(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const user = await adminUserService.createUser(orgId, req.body, requesterOrgId, isSuperAdmin);
     res.status(201).json({ success: true, data: user });
   } catch (e) {
@@ -151,8 +153,8 @@ export async function createUser(req: Request, res: Response, next: NextFunction
 
 export async function assignRole(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = req.params as { userId: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { userId } = vParams(req) as { userId: string };
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const result = await adminUserService.assignRole(
       userId,
       req.body.role,
@@ -168,9 +170,9 @@ export async function assignRole(req: Request, res: Response, next: NextFunction
 
 export async function revokeRole(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = req.params as { userId: string };
-    const { role } = req.query as { role: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { userId } = vParams(req) as { userId: string };
+    const { role } = vQuery(req) as { role: string };
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const result = await adminUserService.revokeRole(
       userId,
       role,
@@ -186,8 +188,8 @@ export async function revokeRole(req: Request, res: Response, next: NextFunction
 
 export async function updateUserStatus(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = req.params as { userId: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { userId } = vParams(req) as { userId: string };
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const user = await adminUserService.updateUserStatus(
       userId,
       req.body.status,
@@ -203,8 +205,8 @@ export async function updateUserStatus(req: Request, res: Response, next: NextFu
 
 export async function listNotifications(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = orgContext(req);
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { userId } = await orgContext(req);
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const result = await notificationService.listNotifications(userId, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
@@ -223,8 +225,8 @@ export async function createNotification(req: Request, res: Response, next: Next
 
 export async function markNotificationRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { userId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { userId } = await orgContext(req);
     const result = await notificationService.markNotificationRead(userId, id);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -234,7 +236,7 @@ export async function markNotificationRead(req: Request, res: Response, next: Ne
 
 export async function markAllNotificationsRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = orgContext(req);
+    const { userId } = await orgContext(req);
     const result = await notificationService.markAllNotificationsRead(userId);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -244,7 +246,7 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
 
 export async function getUnreadCount(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = orgContext(req);
+    const { userId } = await orgContext(req);
     const result = await notificationService.getUnreadCount(userId);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -254,8 +256,8 @@ export async function getUnreadCount(req: Request, res: Response, next: NextFunc
 
 export async function listPayments(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, userId } = orgContext(req);
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { orgId, userId } = await orgContext(req);
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const isAdmin = req.user!.roles.some((r) =>
       ['org_admin', 'super_admin'].includes(r),
     );
@@ -273,7 +275,7 @@ export async function listPayments(req: Request, res: Response, next: NextFuncti
 
 export async function createPayment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const payment = await paymentService.createPayment(
       orgId,
       req.body,
@@ -288,8 +290,8 @@ export async function createPayment(req: Request, res: Response, next: NextFunct
 
 export async function updatePaymentStatus(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { orgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { orgId } = await orgContext(req);
     const payment = await paymentService.updatePaymentStatus(
       id,
       req.body.status,
@@ -304,7 +306,7 @@ export async function updatePaymentStatus(req: Request, res: Response, next: Nex
 
 export async function getWallet(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, userId } = orgContext(req);
+    const { orgId, userId } = await orgContext(req);
     const wallet = await paymentService.getWalletSummary(userId, orgId);
     res.json({ success: true, data: wallet });
   } catch (e) {
@@ -323,7 +325,7 @@ export async function getPaymentConfig(_req: Request, res: Response, next: NextF
 
 export async function createRazorpayOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, userId } = orgContext(req);
+    const { orgId, userId } = await orgContext(req);
     const order = await paymentService.createRazorpayOrder(
       orgId,
       userId,
@@ -338,7 +340,7 @@ export async function createRazorpayOrder(req: Request, res: Response, next: Nex
 
 export async function verifyRazorpayPayment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, userId } = orgContext(req);
+    const { orgId, userId } = await orgContext(req);
     const payment = await paymentService.verifyRazorpayPayment(orgId, userId, req.body);
     res.json({ success: true, data: payment });
   } catch (e) {
@@ -348,8 +350,10 @@ export async function verifyRazorpayPayment(req: Request, res: Response, next: N
 
 export async function getSettings(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId } = orgContext(req);
-    const keys = typeof req.query.keys === 'string' ? req.query.keys.split(',') : undefined;
+    const { orgId } = await orgContext(req);
+    const keys = typeof vQuery<Record<string, string>>(req).keys === 'string'
+      ? vQuery<Record<string, string>>(req).keys.split(',')
+      : undefined;
     const settings = await settingsService.getSettings(orgId, keys);
     res.json({ success: true, data: settings });
   } catch (e) {
@@ -359,7 +363,7 @@ export async function getSettings(req: Request, res: Response, next: NextFunctio
 
 export async function upsertSetting(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const setting = await settingsService.upsertSetting(
       orgId,
       req.body.key,
@@ -375,8 +379,8 @@ export async function upsertSetting(req: Request, res: Response, next: NextFunct
 
 export async function deleteSetting(req: Request, res: Response, next: NextFunction) {
   try {
-    const { key } = req.params as { key: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { key } = vParams(req) as { key: string };
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const result = await settingsService.deleteSetting(orgId, key, requesterOrgId, isSuperAdmin);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -386,8 +390,8 @@ export async function deleteSetting(req: Request, res: Response, next: NextFunct
 
 export async function listAuditLogs(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = orgContext(req);
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const result = await auditService.listAuditLogs(
       orgId,
       page,
@@ -403,8 +407,8 @@ export async function listAuditLogs(req: Request, res: Response, next: NextFunct
 
 export async function listActivityLogs(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = orgContext(req);
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { userId } = await orgContext(req);
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const result = await auditService.listActivityLogs(userId, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
@@ -414,8 +418,8 @@ export async function listActivityLogs(req: Request, res: Response, next: NextFu
 
 export async function getTestReport(req: Request, res: Response, next: NextFunction) {
   try {
-    const { testId } = req.params as { testId: string };
-    const { orgId } = orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const { orgId } = await orgContext(req);
     const report = await reportService.getTestReport(testId, orgId);
     res.json({ success: true, data: report });
   } catch (e) {
@@ -425,8 +429,8 @@ export async function getTestReport(req: Request, res: Response, next: NextFunct
 
 export async function exportTestReport(req: Request, res: Response, next: NextFunction) {
   try {
-    const { testId } = req.params as { testId: string };
-    const { orgId } = orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const { orgId } = await orgContext(req);
     const csv = await reportService.exportTestReportCsv(testId, orgId);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="test-report-${testId}.csv"`);
@@ -438,8 +442,8 @@ export async function exportTestReport(req: Request, res: Response, next: NextFu
 
 export async function computeRanks(req: Request, res: Response, next: NextFunction) {
   try {
-    const { testId } = req.params as { testId: string };
-    const { orgId } = orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const { orgId } = await orgContext(req);
     const result = await reportService.computeRanksForTest(testId, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -449,7 +453,7 @@ export async function computeRanks(req: Request, res: Response, next: NextFuncti
 
 export async function getOrgOverviewReport(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId } = orgContext(req);
+    const { orgId } = await orgContext(req);
     const report = await reportService.getOrgOverviewReport(orgId);
     res.json({ success: true, data: report });
   } catch (e) {
@@ -459,8 +463,8 @@ export async function getOrgOverviewReport(req: Request, res: Response, next: Ne
 
 export async function updateBranch(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const branch = await orgService.updateBranch(id, req.body, requesterOrgId, isSuperAdmin);
     res.json({ success: true, data: branch });
   } catch (e) {
@@ -470,8 +474,8 @@ export async function updateBranch(req: Request, res: Response, next: NextFuncti
 
 export async function deleteBranch(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params as { id: string };
-    const { isSuperAdmin, requesterOrgId } = orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
     const result = await orgService.deleteBranch(id, requesterOrgId, isSuperAdmin);
     res.json({ success: true, data: result });
   } catch (e) {

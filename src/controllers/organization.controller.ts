@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { vQuery, vParams } from '../middleware/validate.js';
 import * as orgService from '../services/organization.service.js';
 
 export async function createOrganization(
@@ -20,7 +21,7 @@ export async function listOrganizations(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const result = await orgService.listOrganizations(page, limit);
     res.json({ success: true, ...result });
   } catch (error) {
@@ -34,7 +35,7 @@ export async function getOrganization(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { id } = req.params as { id: string };
+    const { id } = vParams(req) as { id: string };
     const org = await orgService.getOrganizationById(id);
     res.json({ success: true, data: org });
   } catch (error) {
@@ -48,7 +49,7 @@ export async function updateOrganization(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { id } = req.params as { id: string };
+    const { id } = vParams(req) as { id: string };
     const org = await orgService.updateOrganization(id, req.body);
     res.json({ success: true, data: org });
   } catch (error) {
@@ -62,7 +63,7 @@ export async function createBranch(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { orgId } = req.params as { orgId: string };
+    const { orgId } = vParams(req) as { orgId: string };
     const isSuperAdmin = req.user!.roles.includes('super_admin');
     const branch = await orgService.createBranch(
       orgId,
@@ -82,8 +83,8 @@ export async function listBranches(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { orgId } = req.params as { orgId: string };
-    const { page, limit } = req.query as unknown as { page: number; limit: number };
+    const { orgId } = vParams(req) as { orgId: string };
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
     const result = await orgService.listBranches(orgId, page, limit);
     res.json({ success: true, ...result });
   } catch (error) {
@@ -97,7 +98,7 @@ export async function getBranch(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { id } = req.params as { id: string };
+    const { id } = vParams(req) as { id: string };
     const branch = await orgService.getBranchById(id);
     res.json({ success: true, data: branch });
   } catch (error) {

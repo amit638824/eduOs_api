@@ -1,5 +1,5 @@
 import rateLimit from 'express-rate-limit';
-import { env } from '../config/env.js';
+import { env, isProduction } from '../config/env.js';
 
 export const globalRateLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
@@ -7,6 +7,7 @@ export const globalRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please try again later.' },
+  skip: () => !isProduction,
 });
 
 export const authRateLimiter = rateLimit({
@@ -15,4 +16,5 @@ export const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many authentication attempts.' },
+  skip: () => !isProduction,
 });
