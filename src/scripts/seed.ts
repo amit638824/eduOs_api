@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pool } from '../config/database.js';
 import { seedUsers } from './seed-users.js';
+import { seedExamData } from './seed-exam-data.js';
 
 const seedDir = path.resolve(process.cwd(), 'database/seed');
 
@@ -19,6 +20,9 @@ async function seed() {
 
   console.log('Seeding users & organization data...');
   await seedUsers();
+
+  console.log('Seeding examination demo data...');
+  await seedExamData();
 
   console.log('Seed complete.');
   await pool.end();

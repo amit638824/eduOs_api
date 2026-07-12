@@ -167,3 +167,54 @@ export async function getBranchById(id: string) {
   }
   return result.rows[0];
 }
+
+export async function updateBranch(
+  id: string,
+  input: {
+    name?: string;
+    code?: string;
+    address?: string;
+    settings?: Record<string, unknown>;
+    isActive?: boolean;
+  },
+  requesterOrgId: string | null,
+  isSuperAdmin: boolean,
+) {
+  const branch = await getBranchById(id);
+  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
+    throw new ForbiddenError('Cannot update branch for another organization');
+  }
+  const result = await query(
+    `UPDATE branches SET
+       name = COALESCE($2, name),
+       code = COALESCE($3, code),
+       address = COALESCE($4, address),
+       settings = COALESCE($5, settings),
+       is_active = COALESCE($6, is_active),
+       updated_at = NOW()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING id, organization_id, name, code, address, is_active, updated_at`,
+    [
+      id,
+      input.name ?? null,
+      input.code ?? null,
+      input.address ?? null,
+      input.settings ? JSON.stringify(input.settings) : null,
+      input.isActive ?? null,
+    ],
+  );
+  return result.rows[0];
+}
+
+export async function deleteBranch(
+  id: string,
+  requesterOrgId: string | null,
+  isSuperAdmin: boolean,
+) {
+  const branch = await getBranchById(id);
+  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
+    throw new ForbiddenError('Cannot delete branch for another organization');
+  }
+  await query(`UPDATE branches SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);
+  return { message: 'Branch deleted' };
+}

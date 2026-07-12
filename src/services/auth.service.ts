@@ -20,6 +20,7 @@ interface DbUser {
   last_name: string;
   organization_id: string | null;
   status: string;
+  mfa_enabled?: boolean;
 }
 
 export interface AuthTokens {
@@ -183,8 +184,8 @@ export async function loginUser(
   deviceInfo: Record<string, unknown>,
   ipAddress?: string,
 ) {
-  const result = await query<DbUser>(
-    `SELECT id, email, password_hash, first_name, last_name, organization_id, status
+  const result = await query<DbUser & { mfa_enabled: boolean }>(
+    `SELECT id, email, password_hash, first_name, last_name, organization_id, status, mfa_enabled
      FROM users WHERE email = $1 AND deleted_at IS NULL`,
     [email],
   );
@@ -203,6 +204,56 @@ export async function loginUser(
     throw new UnauthorizedError('Invalid email or password');
   }
 
+  if (user.mfa_enabled) {
+    const mfaToken = generateSecureToken(24);
+    const tokenHash = hashToken(mfaToken);
+    await query(
+      `INSERT INTO otp_codes (user_id, code_hash, purpose, expires_at)
+       VALUES ($1, $2, 'mfa_login', NOW() + INTERVAL '5 minutes')`,
+      [user.id, tokenHash],
+    );
+    return { requiresMfa: true, mfaToken, userId: user.id };
+  }
+
+  await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+
+  return buildAuthResponse(user, deviceInfo, ipAddress);
+}
+
+export async function completeMfaLogin(
+  mfaToken: string,
+  code: string,
+  deviceInfo: Record<string, unknown>,
+  ipAddress?: string,
+) {
+  const tokenHash = hashToken(mfaToken);
+  const otpRow = await query<{ user_id: string }>(
+    `SELECT user_id FROM otp_codes
+     WHERE code_hash = $1 AND purpose = 'mfa_login' AND used_at IS NULL AND expires_at > NOW()
+     ORDER BY created_at DESC LIMIT 1`,
+    [tokenHash],
+  );
+  if (!otpRow.rows[0]) throw new UnauthorizedError('Invalid or expired MFA session');
+
+  const userResult = await query<DbUser>(
+    `SELECT id, email, password_hash, first_name, last_name, organization_id, status
+     FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
+    [otpRow.rows[0].user_id],
+  );
+  const user = userResult.rows[0];
+  if (!user) throw new UnauthorizedError('User not found');
+
+  const mfaUser = await query<{ mfa_secret: string | null }>(
+    `SELECT mfa_secret FROM users WHERE id = $1 AND mfa_enabled = TRUE`,
+    [user.id],
+  );
+  if (!mfaUser.rows[0]?.mfa_secret || hashToken(code.toUpperCase()) !== mfaUser.rows[0].mfa_secret) {
+    throw new UnauthorizedError('Invalid MFA code');
+  }
+
+  await query(`UPDATE otp_codes SET used_at = NOW() WHERE code_hash = $1 AND purpose = 'mfa_login'`, [
+    tokenHash,
+  ]);
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
 
   return buildAuthResponse(user, deviceInfo, ipAddress);
