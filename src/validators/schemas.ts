@@ -249,6 +249,17 @@ export const updatePaymentStatusSchema = z.object({
   gatewayRef: z.string().max(255).optional(),
 });
 
+export const createRazorpayOrderSchema = z.object({
+  amount: z.number().positive().max(1000000),
+});
+
+export const verifyRazorpayPaymentSchema = z.object({
+  paymentId: z.string().uuid(),
+  razorpayOrderId: z.string().min(1),
+  razorpayPaymentId: z.string().min(1),
+  razorpaySignature: z.string().min(1),
+});
+
 export const upsertSettingSchema = z.object({
   key: z.string().min(1).max(100),
   value: z.unknown(),

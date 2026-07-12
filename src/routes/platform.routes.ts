@@ -15,6 +15,8 @@ import {
   createNotificationSchema,
   createPaymentSchema,
   updatePaymentStatusSchema,
+  createRazorpayOrderSchema,
+  verifyRazorpayPaymentSchema,
   upsertSettingSchema,
   listUsersQuerySchema,
   updateBranchSchema,
@@ -148,8 +150,19 @@ router.patch('/notifications/:id/read', validate(uuidParamSchema, 'params'), pla
 router.post('/notifications/read-all', platformController.markAllNotificationsRead);
 
 // Payments
+router.get('/payments/config', platformController.getPaymentConfig);
 router.get('/payments', validate(paginationSchema, 'query'), platformController.listPayments);
 router.get('/payments/wallet', platformController.getWallet);
+router.post(
+  '/payments/create-order',
+  validate(createRazorpayOrderSchema),
+  platformController.createRazorpayOrder,
+);
+router.post(
+  '/payments/verify',
+  validate(verifyRazorpayPaymentSchema),
+  platformController.verifyRazorpayPayment,
+);
 router.post(
   '/payments',
   validate(createPaymentSchema),

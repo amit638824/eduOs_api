@@ -3,6 +3,8 @@ import { env } from '../config/env.js';
 import { hashPassword, hashToken, verifyPassword, generateSecureToken } from '../utils/security.js';
 import { NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import { logAudit } from '../utils/auditLogger.js';
+import { sendPasswordResetEmail } from './email.service.js';
+import { isSmtpConfigured } from '../config/env.js';
 
 export async function requestPasswordReset(email: string) {
   const user = await query<{ id: string; email: string }>(
@@ -21,10 +23,16 @@ export async function requestPasswordReset(email: string) {
     [user.rows[0].id, tokenHash],
   );
 
+  let emailSent = false;
+  if (isSmtpConfigured) {
+    emailSent = await sendPasswordResetEmail(user.rows[0].email, rawToken);
+  }
+
   const response: Record<string, unknown> = {
     message: 'If the email exists, a reset link has been sent.',
+    emailSent,
   };
-  if (env.NODE_ENV !== 'production') {
+  if (!isSmtpConfigured && env.NODE_ENV !== 'production') {
     response.devResetToken = rawToken;
   }
   return response;

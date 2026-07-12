@@ -1,13 +1,19 @@
 import { query } from '../config/database.js';
-import { env } from '../config/env.js';
+import { env, isSmtpConfigured } from '../config/env.js';
 import { hashToken } from '../utils/security.js';
 import { UnauthorizedError } from '../utils/errors.js';
+import { sendOtpEmail } from './email.service.js';
 
 function generateOtpCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 export async function sendOtp(userId: string, purpose: string) {
+  const user = await query<{ email: string }>(
+    `SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    [userId],
+  );
+
   const code = generateOtpCode();
   const codeHash = hashToken(code);
   await query(
@@ -15,8 +21,14 @@ export async function sendOtp(userId: string, purpose: string) {
      VALUES ($1, $2, $3, NOW() + INTERVAL '10 minutes')`,
     [userId, codeHash, purpose],
   );
-  const response: Record<string, unknown> = { message: 'OTP sent', expiresInMinutes: 10 };
-  if (env.NODE_ENV !== 'production') {
+
+  let emailSent = false;
+  if (isSmtpConfigured && user.rows[0]?.email) {
+    emailSent = await sendOtpEmail(user.rows[0].email, code, purpose);
+  }
+
+  const response: Record<string, unknown> = { message: 'OTP sent', expiresInMinutes: 10, emailSent };
+  if (!isSmtpConfigured && env.NODE_ENV !== 'production') {
     response.devOtp = code;
   }
   return response;

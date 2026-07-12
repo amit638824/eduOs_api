@@ -1,54 +1,105 @@
-import { z } from 'zod';
+import 'dotenv/config';
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().int().positive().default(3000),
-
-  DB_TYPE: z.literal('postgres').default('postgres'),
-  DB_HOST: z.string().min(1),
-  DB_PORT: z.coerce.number().int().positive().default(5432),
-  DB_USERNAME: z.string().min(1),
-  DB_PASSWORD: z.string().min(1),
-  DB_DATABASE: z.string().min(1),
-  DB_SSL: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('true'),
-  DB_SSL_REJECT_UNAUTHORIZED: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
-  DB_POOL_MAX: z.coerce.number().int().positive().default(20),
-  DB_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
-  DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
-
-  JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_REFRESH_SECRET: z.string().min(32),
-  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
-
-  CORS_ORIGINS: z.string().default('http://localhost:3000'),
-  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
-  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
-  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
-
-  BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(14).default(12),
-  APP_NAME: z.string().default('EduTech'),
-  TRUST_PROXY: z.coerce.number().int().min(0).default(1),
-});
-
-function loadEnv() {
-  const parsed = envSchema.safeParse(process.env);
-  if (!parsed.success) {
-    const formatted = parsed.error.flatten().fieldErrors;
-    console.error('Invalid environment variables:', formatted);
-    process.exit(1);
-  }
-  return parsed.data;
+/** Read string env with fallback — app won't crash if missing */
+function str(key: string, fallback = ''): string {
+  return process.env[key]?.trim() || fallback;
 }
 
-export const env = loadEnv();
+/** Read number env with fallback */
+function num(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw?.trim()) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Read boolean env (`true` / `1`) with fallback */
+function bool(key: string, fallback: boolean): boolean {
+  const raw = process.env[key];
+  if (!raw?.trim()) return fallback;
+  return raw === 'true' || raw === '1';
+}
+
+const nodeEnvRaw = process.env.NODE_ENV?.trim();
+const NODE_ENV =
+  nodeEnvRaw === 'production' || nodeEnvRaw === 'test' || nodeEnvRaw === 'development'
+    ? nodeEnvRaw
+    : 'development';
+
+/** Dev-only JWT fallbacks — never use in production without real secrets */
+const DEV_JWT_ACCESS =
+  'dev_only_access_secret_minimum_sixty_four_characters_for_local_development_use';
+const DEV_JWT_REFRESH =
+  'dev_only_refresh_secret_minimum_sixty_four_characters_for_local_development_use';
+
+export const env = {
+  NODE_ENV,
+  PORT: num('PORT', 3000),
+
+  DB_TYPE: 'postgres' as const,
+  DB_HOST: str('DB_HOST', 'localhost'),
+  DB_PORT: num('DB_PORT', 5432),
+  DB_USERNAME: str('DB_USERNAME', 'postgres'),
+  DB_PASSWORD: str('DB_PASSWORD', ''),
+  DB_DATABASE: str('DB_DATABASE', 'edutech'),
+  DB_SSL: bool('DB_SSL', true),
+  DB_SSL_REJECT_UNAUTHORIZED: bool('DB_SSL_REJECT_UNAUTHORIZED', false),
+  DB_POOL_MAX: num('DB_POOL_MAX', 20),
+  DB_IDLE_TIMEOUT_MS: num('DB_IDLE_TIMEOUT_MS', 30_000),
+  DB_CONNECTION_TIMEOUT_MS: num('DB_CONNECTION_TIMEOUT_MS', 5_000),
+
+  JWT_ACCESS_SECRET: str('JWT_ACCESS_SECRET', DEV_JWT_ACCESS),
+  JWT_REFRESH_SECRET: str('JWT_REFRESH_SECRET', DEV_JWT_REFRESH),
+  JWT_ACCESS_EXPIRES_IN: str('JWT_ACCESS_EXPIRES_IN', '15m'),
+  JWT_REFRESH_EXPIRES_IN: str('JWT_REFRESH_EXPIRES_IN', '7d'),
+
+  CORS_ORIGINS: str('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173'),
+  RATE_LIMIT_WINDOW_MS: num('RATE_LIMIT_WINDOW_MS', 900_000),
+  RATE_LIMIT_MAX: num('RATE_LIMIT_MAX', 100),
+  AUTH_RATE_LIMIT_MAX: num('AUTH_RATE_LIMIT_MAX', 10),
+
+  BCRYPT_ROUNDS: num('BCRYPT_ROUNDS', 12),
+  APP_NAME: str('APP_NAME', 'EduTech'),
+  TRUST_PROXY: num('TRUST_PROXY', 1),
+
+  FRONTEND_URL: str('FRONTEND_URL', 'http://localhost:5173'),
+
+  SMTP_HOST: str('SMTP_HOST'),
+  SMTP_PORT: num('SMTP_PORT', 587),
+  SMTP_USER: str('SMTP_USER'),
+  SMTP_PASS: str('SMTP_PASS'),
+  SMTP_FROM: str('SMTP_FROM'),
+  BCC_EMAILS: str('BCC_EMAILS'),
+
+  RAZORPAY_KEY_ID: str('RAZORPAY_KEY_ID'),
+  RAZORPAY_KEY_SECRET: str('RAZORPAY_KEY_SECRET'),
+} as const;
+
+function warnMissing(keys: string[], level: 'warn' | 'error' = 'warn') {
+  const missing = keys.filter((k) => !process.env[k]?.trim());
+  if (missing.length === 0) return;
+  const msg = `[env] Missing ${level === 'error' ? 'required' : 'recommended'} variables: ${missing.join(', ')}`;
+  if (level === 'error') console.error(msg);
+  else console.warn(msg);
+}
+
+if (NODE_ENV === 'production') {
+  warnMissing(['DB_HOST', 'DB_PASSWORD', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'], 'error');
+} else {
+  warnMissing(['DB_PASSWORD', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']);
+}
 
 export const isProduction = env.NODE_ENV === 'production';
 
-export const corsOrigins = env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
+export const corsOrigins = env.CORS_ORIGINS.split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+export const isSmtpConfigured = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+
+export const isRazorpayConfigured = Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+
+export const bccEmails = (env.BCC_EMAILS || '')
+  .split(',')
+  .map((e) => e.trim())
+  .filter(Boolean);

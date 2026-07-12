@@ -1,6 +1,8 @@
 import { query } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import { sendEmail } from './email.service.js';
+import { isSmtpConfigured } from '../config/env.js';
 
 export async function listNotifications(userId: string, page: number, limit: number) {
   const offset = (page - 1) * limit;
@@ -32,6 +34,22 @@ export async function createNotification(input: {
      RETURNING id, channel, title, body, is_read, created_at`,
     [input.userId, input.channel, input.title, input.body, JSON.stringify(input.data ?? {})],
   );
+
+  if (input.channel === 'email' && isSmtpConfigured) {
+    const user = await query<{ email: string }>(
+      `SELECT email FROM users WHERE id = $1`,
+      [input.userId],
+    );
+    if (user.rows[0]?.email) {
+      void sendEmail({
+        to: user.rows[0].email,
+        subject: input.title,
+        html: `<div style="font-family:Arial,sans-serif"><h3>${input.title}</h3><p>${input.body}</p></div>`,
+        text: input.body,
+      }).catch((err) => console.error('[email] notification failed:', err));
+    }
+  }
+
   return result.rows[0];
 }
 

@@ -1,6 +1,10 @@
 import { query } from '../config/database.js';
-import { ForbiddenError, NotFoundError } from '../utils/errors.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import * as razorpayService from './razorpay.service.js';
+import { sendPaymentConfirmationEmail } from './email.service.js';
+import { isSmtpConfigured } from '../config/env.js';
+import * as notificationService from './notification.service.js';
 
 export async function listPayments(
   organizationId: string,
@@ -88,5 +92,128 @@ export async function getWalletSummary(userId: string, organizationId: string) {
      FROM payments WHERE user_id = $1 AND organization_id = $2`,
     [userId, organizationId],
   );
+  return result.rows[0];
+}
+
+export async function getPaymentConfig() {
+  return {
+    razorpayKeyId: razorpayService.getRazorpayKeyId(),
+    currency: 'INR',
+    gateway: razorpayService.getRazorpayKeyId() ? 'razorpay' : 'demo',
+  };
+}
+
+export async function createRazorpayOrder(
+  organizationId: string,
+  userId: string,
+  amount: number,
+  userEmail: string,
+) {
+  if (!razorpayService.getRazorpayKeyId()) {
+    throw new ValidationError('Payment gateway is not configured');
+  }
+
+  const payment = await query<{ id: string }>(
+    `INSERT INTO payments (organization_id, user_id, amount, currency, status, metadata)
+     VALUES ($1, $2, $3, 'INR', 'pending', $4)
+     RETURNING id`,
+    [
+      organizationId,
+      userId,
+      amount,
+      JSON.stringify({ gateway: 'razorpay', email: userEmail }),
+    ],
+  );
+
+  const paymentId = payment.rows[0].id;
+  const order = await razorpayService.createOrder(amount, paymentId.replace(/-/g, '').slice(0, 40), {
+    paymentId,
+    userId,
+    organizationId,
+  });
+
+  await query(
+    `UPDATE payments SET gateway_ref = $2,
+       metadata = metadata || $3::jsonb, updated_at = NOW()
+     WHERE id = $1`,
+    [paymentId, order.id, JSON.stringify({ razorpayOrderId: order.id })],
+  );
+
+  return {
+    paymentId,
+    orderId: order.id,
+    amount: order.amount,
+    currency: order.currency,
+    keyId: razorpayService.getRazorpayKeyId(),
+  };
+}
+
+export async function verifyRazorpayPayment(
+  organizationId: string,
+  userId: string,
+  input: {
+    paymentId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  },
+) {
+  const valid = razorpayService.verifyPaymentSignature(
+    input.razorpayOrderId,
+    input.razorpayPaymentId,
+    input.razorpaySignature,
+  );
+  if (!valid) {
+    await query(
+      `UPDATE payments SET status = 'failed', metadata = metadata || $2::jsonb, updated_at = NOW()
+       WHERE id = $1 AND user_id = $3`,
+      [input.paymentId, JSON.stringify({ failedReason: 'invalid_signature' }), userId],
+    );
+    throw new ValidationError('Payment verification failed');
+  }
+
+  const result = await query<{ id: string; amount: string }>(
+    `UPDATE payments SET status = 'completed', gateway_ref = $2,
+       metadata = metadata || $3::jsonb, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $4 AND user_id = $5 AND status = 'pending'
+     RETURNING id, amount, user_id`,
+    [
+      input.paymentId,
+      input.razorpayPaymentId,
+      JSON.stringify({
+        razorpayOrderId: input.razorpayOrderId,
+        razorpayPaymentId: input.razorpayPaymentId,
+      }),
+      organizationId,
+      userId,
+    ],
+  );
+
+  if (!result.rows[0]) {
+    throw new NotFoundError('Payment');
+  }
+
+  const user = await query<{ email: string }>(
+    `SELECT email FROM users WHERE id = $1`,
+    [userId],
+  );
+
+  if (isSmtpConfigured && user.rows[0]?.email) {
+    await sendPaymentConfirmationEmail(
+      user.rows[0].email,
+      Number(result.rows[0].amount),
+      'INR',
+      input.razorpayPaymentId,
+    );
+  }
+
+  await notificationService.createNotification({
+    userId,
+    channel: 'in_app',
+    title: 'Payment Successful',
+    body: `Your payment of ₹${result.rows[0].amount} was successful.`,
+    data: { paymentId: input.paymentId, razorpayPaymentId: input.razorpayPaymentId },
+  });
+
   return result.rows[0];
 }

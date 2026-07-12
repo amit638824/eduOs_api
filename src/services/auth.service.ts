@@ -11,6 +11,7 @@ import {
   verifyRefreshToken,
 } from '../utils/security.js';
 import { ConflictError, UnauthorizedError, NotFoundError } from '../utils/errors.js';
+import { sendWelcomeEmail } from './email.service.js';
 
 interface DbUser {
   id: string;
@@ -130,7 +131,7 @@ export async function registerUser(
 
   const passwordHash = await hashPassword(input.password);
 
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     const userResult = await client.query<DbUser>(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone, organization_id, status, email_verified)
        VALUES ($1, $2, $3, $4, $5, $6, 'active', FALSE)
@@ -176,6 +177,12 @@ export async function registerUser(
 
     return buildAuthResponse(user, deviceInfo, ipAddress, client);
   });
+
+  void sendWelcomeEmail(input.email, input.firstName).catch((err) => {
+    console.error('[email] welcome email failed:', err);
+  });
+
+  return result;
 }
 
 export async function loginUser(

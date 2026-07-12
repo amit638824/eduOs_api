@@ -312,6 +312,40 @@ export async function getWallet(req: Request, res: Response, next: NextFunction)
   }
 }
 
+export async function getPaymentConfig(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const config = await paymentService.getPaymentConfig();
+    res.json({ success: true, data: config });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createRazorpayOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = orgContext(req);
+    const order = await paymentService.createRazorpayOrder(
+      orgId,
+      userId,
+      req.body.amount,
+      req.user!.email,
+    );
+    res.status(201).json({ success: true, data: order });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function verifyRazorpayPayment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = orgContext(req);
+    const payment = await paymentService.verifyRazorpayPayment(orgId, userId, req.body);
+    res.json({ success: true, data: payment });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function getSettings(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = orgContext(req);
