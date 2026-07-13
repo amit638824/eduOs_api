@@ -161,8 +161,22 @@ export async function getTest(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
     const { id } = vParams(req) as { id: string };
-    const test = await testService.getTestById(id, orgId);
-    res.json({ success: true, data: test });
+    const [test, assignments] = await Promise.all([
+      testService.getTestById(id, orgId),
+      testService.listTestAssignments(id, orgId),
+    ]);
+    res.json({ success: true, data: { ...test, assignments } });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAssignableStudents(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
+    const result = await testService.listAssignableStudents(orgId, page, limit);
+    res.json({ success: true, ...result });
   } catch (e) {
     next(e);
   }

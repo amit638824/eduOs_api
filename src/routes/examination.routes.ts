@@ -50,6 +50,7 @@ router.post('/questions/:id/approve', validate(uuidParamSchema, 'params'), requi
 
 // Tests
 router.get('/tests', validate(listTestsQuerySchema, 'query'), requirePermission('test', 'read'), examController.listTests);
+router.get('/students', validate(paginationSchema, 'query'), requirePermission('test', 'assign'), examController.listAssignableStudents);
 router.get('/tests/my', requirePermission('test', 'read'), examController.listMyTests);
 router.get('/tests/:id', validate(uuidParamSchema, 'params'), requirePermission('test', 'read'), examController.getTest);
 router.post('/tests', validate(createTestSchema), requirePermission('test', 'create'), examController.createTest);

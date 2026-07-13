@@ -72,6 +72,47 @@ export async function getTestById(id: string, organizationId: string) {
   return { ...test.rows[0], sections: sections.rows, questions: questions.rows };
 }
 
+export async function listTestAssignments(testId: string, organizationId: string) {
+  await assertTestOrg(testId, organizationId);
+  const result = await query(
+    `SELECT ta.id, ta.assignee_id AS student_id, ta.scheduled_at, ta.created_at,
+            u.email, u.first_name, u.last_name
+     FROM test_assignments ta
+     JOIN students s ON s.id = ta.assignee_id
+     JOIN users u ON u.id = s.user_id
+     WHERE ta.test_id = $1 AND ta.assignee_type = 'student'
+     ORDER BY ta.created_at DESC`,
+    [testId],
+  );
+  return result.rows;
+}
+
+export async function listAssignableStudents(organizationId: string, page: number, limit: number) {
+  const offset = (page - 1) * limit;
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT s.id AS student_id, u.id AS user_id, u.email, u.first_name, u.last_name, u.status
+       FROM students s
+       INNER JOIN users u ON u.id = s.user_id
+       WHERE s.organization_id = $1 AND u.deleted_at IS NULL AND u.status = 'active'
+       ORDER BY u.first_name, u.last_name
+       LIMIT $2 OFFSET $3`,
+      [organizationId, limit, offset],
+    ),
+    query(
+      `SELECT COUNT(*)::int AS total FROM students s
+       INNER JOIN users u ON u.id = s.user_id
+       WHERE s.organization_id = $1 AND u.deleted_at IS NULL AND u.status = 'active'`,
+      [organizationId],
+    ),
+  ]);
+  const total = count.rows[0].total as number;
+  return {
+    data: data.rows,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
+}
+
 export async function createTest(organizationId: string, userId: string, input: CreateTestInput) {
   const result = await query(
     `INSERT INTO tests (
