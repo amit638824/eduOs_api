@@ -109,6 +109,19 @@ const SEED_NOTIFICATIONS = [
 ];
 
 /** Question bank + tests — add/edit tests here */
+/** Exam security — edit per test in liveTests[].config */
+const EXAM_SECURITY_CONFIG = {
+  shuffleQuestions: true,
+  shuffleOptions: true,
+  negativeMarking: true,
+  fullScreen: true,
+  browserLock: true,
+  blockCopyPaste: true,
+  autoSubmit: true,
+  allowResume: true,
+  maxTabSwitches: 3,
+};
+
 const SEED_EXAMS = {
   questionCategory: 'General Aptitude',
   subjects: [
@@ -201,8 +214,8 @@ const SEED_EXAMS = {
       sectionName: 'Section A',
       durationMinutes: 30,
       passingMarks: 2,
-      instructions: 'Answer all questions.',
-      config: null as Record<string, unknown> | null,
+      instructions: 'Read all questions carefully. Do not switch tabs during exam.',
+      config: { ...EXAM_SECURITY_CONFIG, shuffleQuestions: false },
     },
     {
       key: 'ccc-quiz',
@@ -212,8 +225,8 @@ const SEED_EXAMS = {
       sectionName: 'Mixed Section',
       durationMinutes: 20,
       passingMarks: 3,
-      instructions: 'Attempt all questions.',
-      config: { shuffleOptions: true, negativeMarking: true },
+      instructions: 'Attempt all questions. Negative marking applies.',
+      config: { ...EXAM_SECURITY_CONFIG },
     },
   ],
   draftTests: [
@@ -555,9 +568,9 @@ async function insertQuestion(
   q: SeedQuestion,
 ): Promise<string> {
   const row = await pool.query<{ id: string }>(
-    `INSERT INTO questions (organization_id, category_id, topic_id, created_by, type, status, content, marks, difficulty)
-     VALUES ($1, $2, $3, $4, $5, 'approved', $6, 1, 2) RETURNING id`,
-    [orgId, categoryId, topicId, teacherId, q.type, JSON.stringify({ text: q.text })],
+    `INSERT INTO questions (organization_id, category_id, topic_id, created_by, type, status, content, marks, negative_marks, difficulty)
+     VALUES ($1, $2, $3, $4, $5, 'approved', $6, 1, $7, 2) RETURNING id`,
+    [orgId, categoryId, topicId, teacherId, q.type, JSON.stringify({ text: q.text }), EXAM_SECURITY_CONFIG.negativeMarking ? 0.25 : 0],
   );
   for (const [i, opt] of q.options.entries()) {
     const content = 'value' in opt ? { value: opt.value } : { text: opt.text };

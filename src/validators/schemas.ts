@@ -144,6 +144,15 @@ export const saveAnswerSchema = z.object({
   answer: z.record(z.unknown()),
 });
 
+export const submitAttemptSchema = z.object({
+  autoSubmit: z.boolean().optional(),
+});
+
+export const proctoringEventSchema = z.object({
+  event: z.string().min(1).max(64),
+  detail: z.record(z.unknown()).optional(),
+});
+
 export const updateProfileSchema = z.object({
   firstName: z.string().min(1).max(100).trim().optional(),
   lastName: z.string().min(1).max(100).trim().optional(),

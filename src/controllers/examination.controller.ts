@@ -284,8 +284,21 @@ export async function submitAttempt(req: Request, res: Response, next: NextFunct
   try {
     const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
     const { id } = vParams(req) as { id: string };
-    const result = await attemptService.submitAttempt(id, studentId);
+    const { autoSubmit } = req.body as { autoSubmit?: boolean };
+    const result = await attemptService.submitAttempt(id, studentId, { autoSubmit });
     res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function logProctoring(req: Request, res: Response, next: NextFunction) {
+  try {
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const { id } = vParams(req) as { id: string };
+    const { event, detail } = req.body as { event: string; detail?: Record<string, unknown> };
+    const data = await attemptService.logProctoringEvent(id, studentId, event, detail);
+    res.json({ success: true, data });
   } catch (e) {
     next(e);
   }
@@ -311,8 +324,28 @@ export async function listAttempts(req: Request, res: Response, next: NextFuncti
       testId?: string;
       studentId?: string;
     };
-    const result = await attemptService.listAttempts(orgId, page, limit, { testId, studentId });
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'teacher', 'examiner', 'evaluator'];
+    const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    let filterStudentId = studentId;
+    if (!isStaff) {
+      filterStudentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    }
+    const result = await attemptService.listAttempts(orgId, page, limit, {
+      testId,
+      studentId: filterStudentId,
+    });
     res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getMyStats(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const stats = await attemptService.getStudentStats(studentId, orgId);
+    res.json({ success: true, data: stats });
   } catch (e) {
     next(e);
   }

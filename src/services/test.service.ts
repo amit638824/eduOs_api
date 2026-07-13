@@ -228,13 +228,27 @@ export async function assignTestToStudent(
 
 export async function listStudentAssignedTests(studentId: string, organizationId: string) {
   const result = await query(
-    `SELECT DISTINCT t.id, t.title, t.description, t.status, t.duration_minutes,
-            t.passing_marks, t.published_at, ta.scheduled_at
-     FROM test_assignments ta
-     JOIN tests t ON t.id = ta.test_id
-     WHERE ta.assignee_type = 'student' AND ta.assignee_id = $1
+    `SELECT DISTINCT ON (t.id)
+            t.id, t.title, t.description, t.status, t.duration_minutes,
+            t.passing_marks, t.published_at, ta_assign.scheduled_at,
+            latest.id AS attempt_id,
+            latest.status AS attempt_status,
+            latest.submitted_at AS attempt_submitted_at,
+            r.percentage AS result_percentage,
+            r.attempt_id AS result_attempt_id
+     FROM test_assignments ta_assign
+     JOIN tests t ON t.id = ta_assign.test_id
+     LEFT JOIN LATERAL (
+       SELECT ta.id, ta.status, ta.submitted_at
+       FROM test_attempts ta
+       WHERE ta.test_id = t.id AND ta.student_id = $1
+       ORDER BY ta.started_at DESC
+       LIMIT 1
+     ) latest ON TRUE
+     LEFT JOIN results r ON r.attempt_id = latest.id
+     WHERE ta_assign.assignee_type = 'student' AND ta_assign.assignee_id = $1
        AND t.organization_id = $2 AND t.status = 'live' AND t.archived_at IS NULL
-     ORDER BY t.published_at DESC NULLS LAST`,
+     ORDER BY t.id, t.published_at DESC NULLS LAST`,
     [studentId, organizationId],
   );
   return result.rows;

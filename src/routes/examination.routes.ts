@@ -16,6 +16,8 @@ import {
   addTestQuestionSchema,
   assignTestSchema,
   saveAnswerSchema,
+  submitAttemptSchema,
+  proctoringEventSchema,
   listQuestionsQuerySchema,
   listTestsQuerySchema,
   listAttemptsQuerySchema,
@@ -62,9 +64,11 @@ router.post('/tests/:testId/start', validate(testIdParam, 'params'), requirePerm
 router.get('/attempts', validate(listAttemptsQuerySchema, 'query'), requirePermission('attempt', 'read'), examController.listAttempts);
 router.get('/attempts/:id', validate(uuidParamSchema, 'params'), requirePermission('attempt', 'manage'), examController.getAttempt);
 router.post('/attempts/:id/answers', validate(uuidParamSchema, 'params'), validate(saveAnswerSchema), requirePermission('attempt', 'manage'), examController.saveAnswer);
-router.post('/attempts/:id/submit', validate(uuidParamSchema, 'params'), requirePermission('attempt', 'manage'), examController.submitAttempt);
+router.post('/attempts/:id/proctoring', validate(uuidParamSchema, 'params'), validate(proctoringEventSchema), requirePermission('attempt', 'manage'), examController.logProctoring);
+router.post('/attempts/:id/submit', validate(uuidParamSchema, 'params'), validate(submitAttemptSchema), requirePermission('attempt', 'manage'), examController.submitAttempt);
 
 // Results
+router.get('/stats/my', requirePermission('result', 'read'), examController.getMyStats);
 router.get('/results/my', requirePermission('result', 'read'), examController.listMyResults);
 router.get('/results/:attemptId', validate(attemptIdParam, 'params'), requirePermission('result', 'read'), examController.getResult);
 

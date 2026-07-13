@@ -1,6 +1,7 @@
 import { query, withTransaction } from '../config/database.js';
 import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import { parseExamConfig, seededShuffle } from '../utils/examConfig.js';
 
 export async function getStudentIdByUserId(userId: string): Promise<string> {
   const result = await query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
@@ -8,9 +9,27 @@ export async function getStudentIdByUserId(userId: string): Promise<string> {
   return result.rows[0].id as string;
 }
 
+function getEndsAt(startedAt: Date, durationMinutes: number): Date {
+  return new Date(startedAt.getTime() + durationMinutes * 60 * 1000);
+}
+
+function getRemainingSeconds(startedAt: Date, durationMinutes: number): number {
+  const endsAt = getEndsAt(startedAt, durationMinutes);
+  return Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000));
+}
+
+function isExpired(startedAt: Date, durationMinutes: number): boolean {
+  return getRemainingSeconds(startedAt, durationMinutes) <= 0;
+}
+
+function countTabSwitches(proctoringLog: unknown): number {
+  if (!Array.isArray(proctoringLog)) return 0;
+  return proctoringLog.filter((e) => (e as { event?: string })?.event === 'tab_switch').length;
+}
+
 export async function startAttempt(testId: string, studentId: string, organizationId: string) {
   const test = await query(
-    `SELECT id, status, duration_minutes FROM tests
+    `SELECT id, status, duration_minutes, config FROM tests
      WHERE id = $1 AND organization_id = $2 AND status = 'live'`,
     [testId, organizationId],
   );
@@ -26,11 +45,18 @@ export async function startAttempt(testId: string, studentId: string, organizati
   }
 
   const existing = await query(
-    `SELECT id, status FROM test_attempts
+    `SELECT id, status, started_at FROM test_attempts
      WHERE test_id = $1 AND student_id = $2 AND status = 'in_progress'`,
     [testId, studentId],
   );
-  if (existing.rows[0]) return existing.rows[0];
+  if (existing.rows[0]) {
+    const duration = Number(test.rows[0].duration_minutes) || 60;
+    if (isExpired(new Date(existing.rows[0].started_at), duration)) {
+      await submitAttempt(existing.rows[0].id as string, studentId, { autoSubmit: true });
+      throw new ConflictError('Time expired — test was auto-submitted');
+    }
+    return existing.rows[0];
+  }
 
   const submitted = await query(
     `SELECT id FROM test_attempts
@@ -50,16 +76,30 @@ export async function startAttempt(testId: string, studentId: string, organizati
   return result.rows[0];
 }
 
-export async function getAttemptForStudent(attemptId: string, studentId: string) {
+async function loadAttemptRow(attemptId: string, studentId: string) {
   const attempt = await query(
     `SELECT ta.id, ta.test_id, ta.student_id, ta.status, ta.started_at, ta.submitted_at,
-            t.title, t.duration_minutes, t.instructions
+            ta.proctoring_log,
+            t.title, t.duration_minutes, t.instructions, t.config, t.passing_marks
      FROM test_attempts ta
      JOIN tests t ON t.id = ta.test_id
      WHERE ta.id = $1 AND ta.student_id = $2`,
     [attemptId, studentId],
   );
   if (!attempt.rows[0]) throw new NotFoundError('Attempt');
+  return attempt.rows[0];
+}
+
+export async function getAttemptForStudent(attemptId: string, studentId: string) {
+  const row = await loadAttemptRow(attemptId, studentId);
+  const duration = Number(row.duration_minutes) || 60;
+  const startedAt = new Date(row.started_at);
+  const config = parseExamConfig(row.config);
+
+    if (row.status === 'in_progress' && isExpired(startedAt, duration)) {
+      await submitAttempt(attemptId, studentId, { autoSubmit: true });
+      throw new ConflictError('TIME_EXPIRED');
+    }
 
   const questions = await query(
     `SELECT tq.question_id, tq.sort_order, q.type, q.content, q.marks,
@@ -69,7 +109,7 @@ export async function getAttemptForStudent(attemptId: string, studentId: string)
      LEFT JOIN attempt_answers aa ON aa.attempt_id = $1 AND aa.question_id = q.id
      WHERE tq.test_id = $2
      ORDER BY tq.sort_order`,
-    [attemptId, attempt.rows[0].test_id],
+    [attemptId, row.test_id],
   );
 
   const options = await query(
@@ -77,15 +117,44 @@ export async function getAttemptForStudent(attemptId: string, studentId: string)
      FROM question_options qo
      JOIN test_questions tq ON tq.question_id = qo.question_id
      WHERE tq.test_id = $1 ORDER BY qo.sort_order`,
-    [attempt.rows[0].test_id],
+    [row.test_id],
   );
 
-  return {
-    ...attempt.rows[0],
-    questions: questions.rows.map((q) => ({
+  let questionRows = questions.rows;
+  if (config.shuffleQuestions) {
+    questionRows = seededShuffle(questionRows, `${attemptId}-questions`);
+  }
+
+  const mappedQuestions = questionRows.map((q) => {
+    let opts = options.rows.filter((o) => o.question_id === q.question_id);
+    if (config.shuffleOptions) {
+      opts = seededShuffle(opts, `${attemptId}-${q.question_id}-options`);
+    }
+    return {
       ...q,
-      options: options.rows.filter((o) => o.question_id === q.question_id),
-    })),
+      options: opts.map((o) => ({ id: o.id, content: o.content, sort_order: o.sort_order })),
+    };
+  });
+
+  const remainingSeconds = row.status === 'in_progress' ? getRemainingSeconds(startedAt, duration) : 0;
+
+  return {
+    id: row.id,
+    test_id: row.test_id,
+    student_id: row.student_id,
+    status: row.status,
+    started_at: row.started_at,
+    submitted_at: row.submitted_at,
+    title: row.title,
+    test_title: row.title,
+    duration_minutes: duration,
+    instructions: row.instructions,
+    passing_marks: row.passing_marks,
+    config,
+    ends_at: getEndsAt(startedAt, duration).toISOString(),
+    remaining_seconds: remainingSeconds,
+    tab_switch_count: countTabSwitches(row.proctoring_log),
+    questions: mappedQuestions,
   };
 }
 
@@ -95,18 +164,20 @@ export async function saveAnswer(
   questionId: string,
   answer: Record<string, unknown>,
 ) {
-  const attempt = await query(
-    `SELECT id, test_id, status FROM test_attempts WHERE id = $1 AND student_id = $2`,
-    [attemptId, studentId],
-  );
-  if (!attempt.rows[0]) throw new NotFoundError('Attempt');
-  if (attempt.rows[0].status !== 'in_progress') {
+  const row = await loadAttemptRow(attemptId, studentId);
+  if (row.status !== 'in_progress') {
     throw new ConflictError('Attempt is not in progress');
+  }
+
+  const duration = Number(row.duration_minutes) || 60;
+  if (isExpired(new Date(row.started_at), duration)) {
+    await submitAttempt(attemptId, studentId, { autoSubmit: true });
+    throw new ConflictError('Time expired — test was auto-submitted');
   }
 
   const inTest = await query(
     `SELECT 1 FROM test_questions WHERE test_id = $1 AND question_id = $2`,
-    [attempt.rows[0].test_id, questionId],
+    [row.test_id, questionId],
   );
   if (!inTest.rows[0]) throw new NotFoundError('Question');
 
@@ -121,10 +192,43 @@ export async function saveAnswer(
   return result.rows[0];
 }
 
-export async function submitAttempt(attemptId: string, studentId: string) {
+export async function logProctoringEvent(
+  attemptId: string,
+  studentId: string,
+  event: string,
+  detail?: Record<string, unknown>,
+) {
+  const attempt = await query(
+    `SELECT id, status, proctoring_log FROM test_attempts WHERE id = $1 AND student_id = $2`,
+    [attemptId, studentId],
+  );
+  if (!attempt.rows[0]) throw new NotFoundError('Attempt');
+  if (attempt.rows[0].status !== 'in_progress') {
+    throw new ConflictError('Attempt is not in progress');
+  }
+
+  const log = Array.isArray(attempt.rows[0].proctoring_log) ? attempt.rows[0].proctoring_log : [];
+  const entry = { event, detail: detail ?? {}, at: new Date().toISOString() };
+  const updated = [...log, entry];
+
+  await query(`UPDATE test_attempts SET proctoring_log = $2, updated_at = NOW() WHERE id = $1`, [
+    attemptId,
+    JSON.stringify(updated),
+  ]);
+
+  return { tab_switch_count: countTabSwitches(updated), log: entry };
+}
+
+export async function submitAttempt(
+  attemptId: string,
+  studentId: string,
+  options?: { autoSubmit?: boolean },
+) {
+  const autoSubmit = options?.autoSubmit ?? false;
+
   return withTransaction(async (client) => {
     const attempt = await client.query(
-      `SELECT ta.id, ta.test_id, ta.status, t.organization_id
+      `SELECT ta.id, ta.test_id, ta.status, t.organization_id, t.config
        FROM test_attempts ta JOIN tests t ON t.id = ta.test_id
        WHERE ta.id = $1 AND ta.student_id = $2 FOR UPDATE`,
       [attemptId, studentId],
@@ -133,6 +237,9 @@ export async function submitAttempt(attemptId: string, studentId: string) {
     if (attempt.rows[0].status !== 'in_progress') {
       throw new ConflictError('Attempt already submitted');
     }
+
+    const examConfig = parseExamConfig(attempt.rows[0].config);
+    const defaultNegative = examConfig.negativeMarking ? 0.25 : 0;
 
     const answers = await client.query(
       `SELECT aa.question_id, aa.answer, q.type, q.marks, q.negative_marks
@@ -152,11 +259,11 @@ export async function submitAttempt(attemptId: string, studentId: string) {
       maxScore += marks;
       total += 1;
 
-      const options = await client.query(
+      const optionsResult = await client.query(
         `SELECT id, is_correct FROM question_options WHERE question_id = $1`,
         [row.question_id],
       );
-      const correctIds = options.rows.filter((o) => o.is_correct).map((o) => o.id);
+      const correctIds = optionsResult.rows.filter((o) => o.is_correct).map((o) => o.id);
       const answer = row.answer as { selectedOptionIds?: string[] } | null;
       const selected = answer?.selectedOptionIds ?? [];
 
@@ -176,13 +283,13 @@ export async function submitAttempt(attemptId: string, studentId: string) {
           [...correctSet].every((id) => selectedSet.has(id));
       } else if (row.type === 'fill_blank') {
         const ans = row.answer as { text?: string } | null;
-        const correctOpt = options.rows.find((o) => o.is_correct);
+        const correctOpt = optionsResult.rows.find((o) => o.is_correct);
         const expected = (correctOpt?.content as { text?: string })?.text?.trim().toLowerCase() ?? '';
         const given = ans?.text?.trim().toLowerCase() ?? '';
         isCorrect = expected.length > 0 && given === expected;
       } else if (row.type === 'integer' || row.type === 'numerical') {
         const ans = row.answer as { value?: number | string } | null;
-        const correctOpt = options.rows.find((o) => o.is_correct);
+        const correctOpt = optionsResult.rows.find((o) => o.is_correct);
         const expected = Number((correctOpt?.content as { value?: number })?.value);
         const given = Number(ans?.value);
         if (row.type === 'integer') {
@@ -195,8 +302,9 @@ export async function submitAttempt(attemptId: string, studentId: string) {
       if (isCorrect) {
         marksAwarded = marks;
         correct += 1;
-      } else if (selected.length > 0) {
-        marksAwarded = -Number(row.negative_marks);
+      } else if (selected.length > 0 || row.type === 'fill_blank' || row.type === 'integer' || row.type === 'numerical') {
+        const neg = Number(row.negative_marks) || defaultNegative;
+        if (neg > 0) marksAwarded = -neg;
       }
 
       totalScore += marksAwarded;
@@ -214,10 +322,11 @@ export async function submitAttempt(attemptId: string, studentId: string) {
     const percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
     const accuracy = total > 0 ? (correct / total) * 100 : 0;
 
+    const finalStatus = autoSubmit ? 'auto_submitted' : 'submitted';
     await client.query(
-      `UPDATE test_attempts SET status = 'submitted', submitted_at = NOW(), updated_at = NOW()
+      `UPDATE test_attempts SET status = $2, submitted_at = NOW(), updated_at = NOW()
        WHERE id = $1`,
-      [attemptId],
+      [attemptId, finalStatus],
     );
 
     const result = await client.query(
@@ -232,7 +341,7 @@ export async function submitAttempt(attemptId: string, studentId: string) {
         maxScore,
         percentage,
         accuracy,
-        JSON.stringify({ correct, total }),
+        JSON.stringify({ correct, total, autoSubmit }),
       ],
     );
 
@@ -253,7 +362,7 @@ export async function submitAttempt(attemptId: string, studentId: string) {
     }
 
     const ranked = await client.query(
-      `SELECT id, total_score, max_score, percentage, accuracy, rank, percentile, created_at
+      `SELECT id, attempt_id, total_score, max_score, percentage, accuracy, rank, percentile, created_at
        FROM results WHERE attempt_id = $1`,
       [attemptId],
     );
@@ -266,7 +375,7 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
   const result = await query(
     `SELECT r.id, r.attempt_id, r.student_id, r.test_id, r.total_score, r.max_score,
             r.percentage, r.accuracy, r.rank, r.percentile, r.analysis, r.created_at,
-            t.title AS test_title, u.first_name, u.last_name
+            t.title AS test_title, t.passing_marks, u.first_name, u.last_name
      FROM results r
      JOIN tests t ON t.id = r.test_id
      JOIN students s ON s.id = r.student_id
@@ -301,7 +410,7 @@ export async function listAttempts(
     query(
       `SELECT ta.id, ta.test_id, ta.student_id, ta.status, ta.started_at, ta.submitted_at,
               t.title AS test_title, u.first_name, u.last_name, u.email,
-              r.total_score, r.max_score, r.percentage
+              r.total_score, r.max_score, r.percentage, r.attempt_id AS result_attempt_id
        FROM test_attempts ta
        JOIN tests t ON t.id = ta.test_id
        JOIN students s ON s.id = ta.student_id
@@ -326,7 +435,7 @@ export async function listAttempts(
 export async function listStudentResults(studentId: string, organizationId: string) {
   const result = await query(
     `SELECT r.id, r.attempt_id, r.test_id, r.total_score, r.max_score, r.percentage,
-            r.accuracy, r.created_at, t.title AS test_title
+            r.accuracy, r.rank, r.percentile, r.created_at, t.title AS test_title, t.passing_marks
      FROM results r
      JOIN tests t ON t.id = r.test_id
      WHERE r.student_id = $1 AND t.organization_id = $2
@@ -334,4 +443,25 @@ export async function listStudentResults(studentId: string, organizationId: stri
     [studentId, organizationId],
   );
   return result.rows;
+}
+
+export async function getStudentStats(studentId: string, organizationId: string) {
+  const result = await query(
+    `SELECT
+       (SELECT COUNT(DISTINCT t.id)::int
+        FROM test_assignments ta JOIN tests t ON t.id = ta.test_id
+        WHERE ta.assignee_type = 'student' AND ta.assignee_id = $1
+          AND t.organization_id = $2 AND t.status = 'live') AS assigned_tests,
+       (SELECT COUNT(*)::int FROM test_attempts ta
+        JOIN tests t ON t.id = ta.test_id
+        WHERE ta.student_id = $1 AND t.organization_id = $2) AS attempts,
+       (SELECT COUNT(*)::int FROM results r
+        JOIN tests t ON t.id = r.test_id
+        WHERE r.student_id = $1 AND t.organization_id = $2) AS results,
+       (SELECT COUNT(*)::int FROM test_attempts ta
+        JOIN tests t ON t.id = ta.test_id
+        WHERE ta.student_id = $1 AND t.organization_id = $2 AND ta.status = 'in_progress') AS in_progress`,
+    [studentId, organizationId],
+  );
+  return result.rows[0];
 }
