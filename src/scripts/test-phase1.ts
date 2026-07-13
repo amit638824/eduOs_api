@@ -4,7 +4,7 @@
 import 'dotenv/config';
 
 const BASE = process.env.API_BASE ?? 'http://127.0.0.1:3000/api/v1';
-const PASSWORD = 'Password@123';
+const PASSWORD = 'Test@12345';
 
 interface TestResult {
   name: string;

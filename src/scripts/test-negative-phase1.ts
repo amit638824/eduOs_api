@@ -5,7 +5,7 @@
 import 'dotenv/config';
 
 const BASE = process.env.API_BASE ?? 'http://127.0.0.1:3000/api/v1';
-const PASSWORD = 'Password@123';
+const PASSWORD = 'Test@12345';
 
 interface TestResult {
   name: string;
@@ -122,13 +122,13 @@ async function run() {
 
   r = await req('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: 'not-an-email', password: 'Password@123' }),
+    body: JSON.stringify({ email: 'not-an-email', password: 'Test@12345' }),
   });
   expectClientError('Invalid email format on login', r.status, r.body, AUTH_REJECT);
 
   r = await req('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: 'nobody@edutech.com', password: 'Password@123' }),
+    body: JSON.stringify({ email: 'nobody@edutech.com', password: 'Test@12345' }),
   });
   expectClientError('Unknown user login', r.status, r.body, AUTH_REJECT);
 
@@ -198,7 +198,7 @@ async function run() {
     token: teacherToken,
     body: JSON.stringify({
       email: 'hack@edutech.com',
-      password: 'Password@123',
+      password: 'Test@12345',
       firstName: 'Hack',
       lastName: 'User',
       role: 'org_admin',
@@ -238,7 +238,7 @@ async function run() {
     method: 'POST',
     body: JSON.stringify({
       email: 'student1@edutech.com',
-      password: 'Password@123',
+      password: 'Test@12345',
       firstName: 'Dup',
       lastName: 'User',
       role: 'student',

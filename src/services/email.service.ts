@@ -61,7 +61,7 @@ export async function sendPasswordResetEmail(email: string, resetToken: string):
         <p>Or copy this link: <br/><a href="${resetUrl}">${resetUrl}</a></p>
         <p>This link expires in 1 hour. If you did not request this, ignore this email.</p>
         <hr/>
-        <small>TechWagger · EduTest Pro</small>
+        <small>${env.APP_NAME} · Kerakat, Jaunpur</small>
       </div>
     `,
     text: `Reset your password: ${resetUrl}\nExpires in 1 hour.`,
@@ -79,7 +79,7 @@ export async function sendOtpEmail(email: string, code: string, purpose: string)
         <p style="font-size:28px;font-weight:bold;letter-spacing:4px">${code}</p>
         <p>Valid for 10 minutes. Do not share this code.</p>
         <hr/>
-        <small>TechWagger · EduTest Pro</small>
+        <small>${env.APP_NAME} · Kerakat, Jaunpur</small>
       </div>
     `,
     text: `Your OTP is ${code}. Valid for 10 minutes.`,
@@ -102,7 +102,7 @@ export async function sendPaymentConfirmationEmail(
         <p>Reference: ${paymentId}</p>
         <p>Thank you for using ${env.APP_NAME}.</p>
         <hr/>
-        <small>TechWagger · EduTest Pro</small>
+        <small>${env.APP_NAME} · Kerakat, Jaunpur</small>
       </div>
     `,
     text: `Payment of ${currency} ${amount} received. Ref: ${paymentId}`,
@@ -119,7 +119,7 @@ export async function sendWelcomeEmail(email: string, firstName: string): Promis
         <p>Your account on ${env.APP_NAME} is ready.</p>
         <p><a href="${env.FRONTEND_URL}/login">Login to your dashboard</a></p>
         <hr/>
-        <small>TechWagger · EduTest Pro</small>
+        <small>${env.APP_NAME} · Kerakat, Jaunpur</small>
       </div>
     `,
     text: `Welcome to ${env.APP_NAME}. Login at ${env.FRONTEND_URL}/login`,

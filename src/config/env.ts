@@ -59,7 +59,7 @@ export const env = {
   AUTH_RATE_LIMIT_MAX: num('AUTH_RATE_LIMIT_MAX', 10),
 
   BCRYPT_ROUNDS: num('BCRYPT_ROUNDS', 12),
-  APP_NAME: str('APP_NAME', 'EduTech'),
+  APP_NAME: str('APP_NAME', 'Super Computer Academy'),
   TRUST_PROXY: num('TRUST_PROXY', 1),
 
   FRONTEND_URL: str('FRONTEND_URL', 'http://localhost:5173'),
