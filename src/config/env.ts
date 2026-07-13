@@ -26,6 +26,20 @@ const NODE_ENV =
     ? nodeEnvRaw
     : 'development';
 
+/**
+ * Production URLs — hardcoded for server deploy when .env is not uploaded.
+ * Browser CORS for https://onlineexam.techwagger.com
+ */
+const PRODUCTION_FRONTEND_URL = 'https://onlineexam.techwagger.com';
+const PRODUCTION_CORS_ORIGINS = [
+  PRODUCTION_FRONTEND_URL,
+  'https://www.onlineexam.techwagger.com',
+] as const;
+const LOCAL_CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';
+const DEFAULT_CORS_ORIGINS = [...PRODUCTION_CORS_ORIGINS, LOCAL_CORS_ORIGINS].join(',');
+const DEFAULT_FRONTEND_URL =
+  NODE_ENV === 'production' ? PRODUCTION_FRONTEND_URL : 'http://localhost:5173';
+
 /** Dev-only JWT fallbacks — never use in production without real secrets */
 const DEV_JWT_ACCESS =
   'dev_only_access_secret_minimum_sixty_four_characters_for_local_development_use';
@@ -53,7 +67,7 @@ export const env = {
   JWT_ACCESS_EXPIRES_IN: str('JWT_ACCESS_EXPIRES_IN', '15m'),
   JWT_REFRESH_EXPIRES_IN: str('JWT_REFRESH_EXPIRES_IN', '7d'),
 
-  CORS_ORIGINS: str('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173'),
+  CORS_ORIGINS: str('CORS_ORIGINS', DEFAULT_CORS_ORIGINS),
   RATE_LIMIT_WINDOW_MS: num('RATE_LIMIT_WINDOW_MS', 900_000),
   RATE_LIMIT_MAX: num('RATE_LIMIT_MAX', 100),
   AUTH_RATE_LIMIT_MAX: num('AUTH_RATE_LIMIT_MAX', 10),
@@ -62,7 +76,7 @@ export const env = {
   APP_NAME: str('APP_NAME', 'Super Computer Academy'),
   TRUST_PROXY: num('TRUST_PROXY', 1),
 
-  FRONTEND_URL: str('FRONTEND_URL', 'http://localhost:5173'),
+  FRONTEND_URL: str('FRONTEND_URL', DEFAULT_FRONTEND_URL),
 
   SMTP_HOST: str('SMTP_HOST'),
   SMTP_PORT: num('SMTP_PORT', 587),
@@ -91,9 +105,25 @@ if (NODE_ENV === 'production') {
 
 export const isProduction = env.NODE_ENV === 'production';
 
-export const corsOrigins = env.CORS_ORIGINS.split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
+export function normalizeOrigin(value: string): string {
+  const trimmed = value.trim().replace(/\/$/, '');
+  if (!trimmed) return '';
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return trimmed;
+  }
+}
+
+/** Allowed browser origins — production URLs always included (even without .env on server). */
+export const corsOrigins = Array.from(
+  new Set(
+    [...PRODUCTION_CORS_ORIGINS, env.CORS_ORIGINS, env.FRONTEND_URL]
+      .flatMap((value) => String(value).split(','))
+      .map(normalizeOrigin)
+      .filter(Boolean),
+  ),
+);
 
 export const isSmtpConfigured = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
 

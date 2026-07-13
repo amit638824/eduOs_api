@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
-import { env, corsOrigins, isProduction } from './config/env.js';
+import { env, corsOrigins, isProduction, normalizeOrigin } from './config/env.js';
 import { globalRateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import routes from './routes/index.js';
@@ -24,9 +24,18 @@ export function createApp() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || corsOrigins.includes(origin)) {
+        // Postman / server-to-server — no Origin header
+        if (!origin) {
           callback(null, true);
           return;
+        }
+        const normalized = normalizeOrigin(origin);
+        if (corsOrigins.includes(normalized) || corsOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        if (!isProduction) {
+          console.warn(`[cors] Blocked origin: ${origin} (allowed: ${corsOrigins.join(', ')})`);
         }
         callback(new Error('Not allowed by CORS'));
       },
