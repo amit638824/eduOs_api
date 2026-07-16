@@ -118,6 +118,8 @@ export const createQuestionSchema = z.object({
   options: z.array(questionOptionSchema).optional(),
 });
 
+export const updateQuestionSchema = createQuestionSchema;
+
 export const listSubjectsQuerySchema = paginationSchema.extend({
   departmentId: z.string().uuid().optional(),
 });

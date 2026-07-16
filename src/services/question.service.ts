@@ -68,9 +68,15 @@ export async function listQuestions(
 
 export async function getQuestionById(id: string, organizationId: string) {
   const question = await query(
-    `SELECT id, organization_id, category_id, topic_id, type, status, content, explanation,
-            marks, negative_marks, difficulty, language, version, created_at, updated_at
-     FROM questions WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL`,
+    `SELECT q.id, q.organization_id, q.category_id, q.topic_id, q.type, q.status, q.content, q.explanation,
+            q.marks, q.negative_marks, q.difficulty, q.language, q.version, q.created_at, q.updated_at,
+            t.name AS topic_name, c.subject_id, s.name AS subject_name, s.department_id, d.name AS department_name
+     FROM questions q
+     LEFT JOIN topics t ON t.id = q.topic_id
+     LEFT JOIN chapters c ON c.id = t.chapter_id
+     LEFT JOIN subjects s ON s.id = c.subject_id
+     LEFT JOIN departments d ON d.id = s.department_id
+     WHERE q.id = $1 AND q.organization_id = $2 AND q.archived_at IS NULL`,
     [id, organizationId],
   );
   if (!question.rows[0]) throw new NotFoundError('Question');
@@ -124,6 +130,74 @@ export async function createQuestion(
 
     return question;
   });
+}
+
+export async function updateQuestion(
+  id: string,
+  organizationId: string,
+  input: CreateQuestionInput,
+) {
+  return withTransaction(async (client) => {
+    const existing = await client.query(
+      `SELECT id FROM questions WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL`,
+      [id, organizationId],
+    );
+    if (!existing.rows[0]) throw new NotFoundError('Question');
+
+    const q = await client.query(
+      `UPDATE questions SET
+         topic_id = $3,
+         type = $4,
+         content = $5,
+         explanation = $6,
+         marks = $7,
+         negative_marks = $8,
+         difficulty = $9,
+         language = $10,
+         category_id = $11,
+         updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2
+       RETURNING id, organization_id, type, status, content, marks, topic_id, updated_at`,
+      [
+        id,
+        organizationId,
+        input.topicId ?? null,
+        input.type,
+        JSON.stringify(input.content),
+        input.explanation ?? null,
+        input.marks ?? 1,
+        input.negativeMarks ?? 0,
+        input.difficulty ?? null,
+        input.language ?? 'en',
+        input.categoryId ?? null,
+      ],
+    );
+
+    await client.query(`DELETE FROM question_options WHERE question_id = $1`, [id]);
+
+    if (input.options?.length) {
+      for (const [i, opt] of input.options.entries()) {
+        await client.query(
+          `INSERT INTO question_options (question_id, content, is_correct, sort_order)
+           VALUES ($1, $2, $3, $4)`,
+          [id, JSON.stringify(opt.content), opt.isCorrect, opt.sortOrder ?? i],
+        );
+      }
+    }
+
+    return q.rows[0];
+  });
+}
+
+export async function deleteQuestion(id: string, organizationId: string) {
+  const result = await query(
+    `UPDATE questions SET archived_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL
+     RETURNING id`,
+    [id, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('Question');
+  return { id: result.rows[0].id, deleted: true };
 }
 
 export async function approveQuestion(id: string, organizationId: string, approverId: string) {

@@ -141,6 +141,28 @@ export async function createQuestion(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function updateQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const question = await questionService.updateQuestion(id, orgId, req.body);
+    res.json({ success: true, data: question });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function deleteQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const result = await questionService.deleteQuestion(id, orgId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function approveQuestion(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId, userId } = await orgContext(req);

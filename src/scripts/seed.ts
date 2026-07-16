@@ -559,7 +559,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r
 JOIN permissions p ON (
-  (p.resource = 'question' AND p.action IN ('create', 'read', 'update', 'import', 'approve'))
+  (p.resource = 'question' AND p.action IN ('create', 'read', 'update', 'delete', 'import', 'approve'))
   OR (p.resource = 'test' AND p.action IN ('create', 'read', 'update', 'publish', 'assign'))
   OR (p.resource IN ('subject', 'topic') AND p.action IN ('create', 'read', 'update'))
   OR (p.resource = 'department' AND p.action = 'read')

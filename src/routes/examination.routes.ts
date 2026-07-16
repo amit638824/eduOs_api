@@ -11,6 +11,7 @@ import {
   createTopicForSubjectSchema,
   createCategorySchema,
   createQuestionSchema,
+  updateQuestionSchema,
   createTestSchema,
   updateTestSchema,
   addTestSectionSchema,
@@ -50,6 +51,8 @@ router.post('/question-categories', validate(createCategorySchema), requirePermi
 router.get('/questions', validate(listQuestionsQuerySchema, 'query'), requirePermission('question', 'read'), examController.listQuestions);
 router.get('/questions/:id', validate(uuidParamSchema, 'params'), requirePermission('question', 'read'), examController.getQuestion);
 router.post('/questions', validate(createQuestionSchema), requirePermission('question', 'create'), examController.createQuestion);
+router.patch('/questions/:id', validate(uuidParamSchema, 'params'), validate(updateQuestionSchema), requirePermission('question', 'update'), examController.updateQuestion);
+router.delete('/questions/:id', validate(uuidParamSchema, 'params'), requirePermission('question', 'update'), examController.deleteQuestion);
 router.post('/questions/:id/approve', validate(uuidParamSchema, 'params'), requirePermission('question', 'approve'), examController.approveQuestion);
 
 // Tests
