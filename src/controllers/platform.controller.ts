@@ -13,7 +13,7 @@ import { requireOrgId, resolveOrganizationId } from '../utils/orgAccess.js';
 
 async function orgContext(req: Request) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
-  const orgId = await resolveOrganizationId(req.user!.organizationId, isSuperAdmin);
+  const orgId = await resolveOrganizationId(req.user!.organizationId, isSuperAdmin, req);
   return {
     orgId,
     isSuperAdmin,

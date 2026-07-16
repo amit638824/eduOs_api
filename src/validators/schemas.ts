@@ -38,9 +38,13 @@ export const createOrganizationSchema = z.object({
   logoUrl: z.string().url().optional(),
   theme: z.record(z.unknown()).optional(),
   settings: z.record(z.unknown()).optional(),
+  /** When true, org is immediately active; default pending for approval */
+  isActive: z.boolean().optional(),
 });
 
-export const updateOrganizationSchema = createOrganizationSchema.partial();
+export const updateOrganizationSchema = createOrganizationSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
 
 export const createBranchSchema = z.object({
   name: z.string().min(2).max(255).trim(),

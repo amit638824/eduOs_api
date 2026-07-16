@@ -9,7 +9,7 @@ import * as analyticsService from '../services/analytics.service.js';
 
 async function orgContext(req: Request) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
-  const orgId = await resolveOrganizationId(req.user!.organizationId, isSuperAdmin);
+  const orgId = await resolveOrganizationId(req.user!.organizationId, isSuperAdmin, req);
   return { orgId, userId: req.user!.id, isSuperAdmin };
 }
 

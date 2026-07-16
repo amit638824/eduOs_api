@@ -69,4 +69,20 @@ router.patch(
   orgController.updateOrganization,
 );
 
+router.post(
+  '/:id/verify',
+  validate(uuidParamSchema, 'params'),
+  requireRoles('super_admin'),
+  requirePermission('organization', 'verify'),
+  orgController.verifyOrganization,
+);
+
+router.delete(
+  '/:id',
+  validate(uuidParamSchema, 'params'),
+  requireRoles('super_admin'),
+  requirePermission('organization', 'delete'),
+  orgController.deleteOrganization,
+);
+
 export default router;
