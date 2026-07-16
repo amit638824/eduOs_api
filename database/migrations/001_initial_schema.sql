@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS teachers (
 CREATE TABLE IF NOT EXISTS subjects (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  department_id   UUID REFERENCES departments(id) ON DELETE SET NULL,
   name            VARCHAR(255) NOT NULL,
   code            VARCHAR(50),
   language        VARCHAR(10) NOT NULL DEFAULT 'en',

@@ -16,8 +16,12 @@ async function orgContext(req: Request) {
 export async function listSubjects(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const result = await subjectService.listSubjects(orgId, page, limit);
+    const { page, limit, departmentId } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      departmentId?: string;
+    };
+    const result = await subjectService.listSubjects(orgId, page, limit, departmentId);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -72,6 +76,28 @@ export async function createTopic(req: Request, res: Response, next: NextFunctio
     const { orgId } = await orgContext(req);
     const { chapterId } = vParams(req) as { chapterId: string };
     const topic = await subjectService.createTopic(chapterId, orgId, req.body);
+    res.status(201).json({ success: true, data: topic });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listTopicsForSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { subjectId } = vParams(req) as { subjectId: string };
+    const topics = await subjectService.listTopicsForSubject(subjectId, orgId);
+    res.json({ success: true, data: topics });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createTopicForSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { subjectId } = vParams(req) as { subjectId: string };
+    const topic = await subjectService.createTopicForSubject(subjectId, orgId, req.body);
     res.status(201).json({ success: true, data: topic });
   } catch (e) {
     next(e);

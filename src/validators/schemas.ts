@@ -72,6 +72,7 @@ export const createSubjectSchema = z.object({
   name: z.string().min(2).max(255).trim(),
   code: z.string().max(50).trim().optional(),
   language: z.string().max(10).optional(),
+  departmentId: z.string().uuid(),
 });
 
 export const createChapterSchema = z.object({
@@ -84,6 +85,13 @@ export const createTopicSchema = z.object({
   difficulty: z.number().int().min(1).max(5).optional(),
   tags: z.array(z.string()).optional(),
   sortOrder: z.number().int().optional(),
+});
+
+export const createTopicForSubjectSchema = z.object({
+  name: z.string().min(2).max(255).trim(),
+  difficulty: z.number().int().min(1).max(5).optional(),
+  tags: z.array(z.string()).optional(),
+  chapterName: z.string().min(2).max(255).trim().optional(),
 });
 
 export const createCategorySchema = z.object({
@@ -106,8 +114,12 @@ export const createQuestionSchema = z.object({
   difficulty: z.number().int().min(1).max(5).optional(),
   language: z.string().max(10).optional(),
   categoryId: z.string().uuid().optional(),
-  topicId: z.string().uuid().optional(),
+  topicId: z.string().uuid(),
   options: z.array(questionOptionSchema).optional(),
+});
+
+export const listSubjectsQuerySchema = paginationSchema.extend({
+  departmentId: z.string().uuid().optional(),
 });
 
 export const createTestSchema = z.object({

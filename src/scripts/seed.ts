@@ -559,9 +559,11 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r
 JOIN permissions p ON (
-  (p.resource = 'question' AND p.action IN ('create', 'read', 'update', 'import'))
+  (p.resource = 'question' AND p.action IN ('create', 'read', 'update', 'import', 'approve'))
   OR (p.resource = 'test' AND p.action IN ('create', 'read', 'update', 'publish', 'assign'))
   OR (p.resource IN ('subject', 'topic') AND p.action IN ('create', 'read', 'update'))
+  OR (p.resource = 'department' AND p.action = 'read')
+  OR (p.resource IN ('organization', 'branch') AND p.action = 'read')
   OR (p.resource IN ('result', 'analytics', 'report') AND p.action = 'read')
 ) WHERE r.name = 'teacher'
 ON CONFLICT DO NOTHING;
@@ -866,10 +868,19 @@ async function seedExamination(ctx: OrgContext): Promise<Record<string, string>>
   const categoryId = category.rows[0].id;
 
   for (const dept of SEED_EXAMS.departments) {
+    const deptRow = await pool.query<{ id: string }>(
+      `SELECT d.id FROM departments d
+       JOIN branches b ON b.id = d.branch_id
+       WHERE b.organization_id = $1 AND d.code = $2 AND d.deleted_at IS NULL
+       LIMIT 1`,
+      [orgId, dept.code],
+    );
+    const departmentId = deptRow.rows[0]?.id ?? null;
+
     for (const subject of dept.subjects) {
       const sub = await pool.query<{ id: string }>(
-        `INSERT INTO subjects (organization_id, name, code) VALUES ($1, $2, $3) RETURNING id`,
-        [orgId, subject.name, subject.code],
+        `INSERT INTO subjects (organization_id, department_id, name, code) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [orgId, departmentId, subject.name, subject.code],
       );
       const chapter = await pool.query<{ id: string }>(
         `INSERT INTO chapters (subject_id, name, sort_order) VALUES ($1, $2, 1) RETURNING id`,

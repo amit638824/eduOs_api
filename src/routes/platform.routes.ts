@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
-import { authenticate, requireRoles } from '../middleware/auth.js';
+import { authenticate, requirePermission, requireRoles } from '../middleware/auth.js';
 import {
   paginationSchema,
   uuidParamSchema,
@@ -32,12 +32,12 @@ const router = Router();
 
 router.use(authenticate);
 
-// Departments
+// Departments (teachers need read for department → subject → topic on create-test)
 router.get(
   '/branches/:branchId/departments',
   validate(branchIdParamSchema, 'params'),
   validate(paginationSchema, 'query'),
-  requireRoles('org_admin', 'super_admin'),
+  requirePermission('department', 'read'),
   platformController.listDepartments,
 );
 router.post(

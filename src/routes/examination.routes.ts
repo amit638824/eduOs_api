@@ -8,6 +8,7 @@ import {
   createSubjectSchema,
   createChapterSchema,
   createTopicSchema,
+  createTopicForSubjectSchema,
   createCategorySchema,
   createQuestionSchema,
   createTestSchema,
@@ -19,6 +20,7 @@ import {
   submitAttemptSchema,
   proctoringEventSchema,
   listQuestionsQuerySchema,
+  listSubjectsQuerySchema,
   listTestsQuerySchema,
   listAttemptsQuerySchema,
 } from '../validators/schemas.js';
@@ -33,10 +35,12 @@ const router = Router();
 router.use(authenticate);
 
 // Subjects
-router.get('/subjects', validate(paginationSchema, 'query'), requirePermission('question', 'read'), examController.listSubjects);
+router.get('/subjects', validate(listSubjectsQuerySchema, 'query'), requirePermission('question', 'read'), examController.listSubjects);
 router.post('/subjects', validate(createSubjectSchema), requirePermission('question', 'create'), examController.createSubject);
 router.get('/subjects/:subjectId/chapters', validate(subjectIdParam, 'params'), requirePermission('question', 'read'), examController.listChapters);
 router.post('/subjects/:subjectId/chapters', validate(subjectIdParam, 'params'), validate(createChapterSchema), requirePermission('question', 'create'), examController.createChapter);
+router.get('/subjects/:subjectId/topics', validate(subjectIdParam, 'params'), requirePermission('question', 'read'), examController.listTopicsForSubject);
+router.post('/subjects/:subjectId/topics', validate(subjectIdParam, 'params'), validate(createTopicForSubjectSchema), requirePermission('question', 'create'), examController.createTopicForSubject);
 router.get('/chapters/:chapterId/topics', validate(chapterIdParam, 'params'), requirePermission('question', 'read'), examController.listTopics);
 router.post('/chapters/:chapterId/topics', validate(chapterIdParam, 'params'), validate(createTopicSchema), requirePermission('question', 'create'), examController.createTopic);
 

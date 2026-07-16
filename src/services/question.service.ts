@@ -29,26 +29,35 @@ export async function listQuestions(
 ) {
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
-  let where = 'organization_id = $1 AND archived_at IS NULL';
+  let where = 'q.organization_id = $1 AND q.archived_at IS NULL';
   if (filters?.status) {
     params.push(filters.status);
-    where += ` AND status = $${params.length}`;
+    where += ` AND q.status = $${params.length}`;
   }
   if (filters?.type) {
     params.push(filters.type);
-    where += ` AND type = $${params.length}`;
+    where += ` AND q.type = $${params.length}`;
   }
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, organization_id, category_id, topic_id, type, status, content, marks,
-              negative_marks, difficulty, language, version, created_at, updated_at
-       FROM questions WHERE ${where}
-       ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      `SELECT q.id, q.organization_id, q.category_id, q.topic_id, q.type, q.status, q.content, q.marks,
+              q.negative_marks, q.difficulty, q.language, q.version, q.created_at, q.updated_at,
+              t.name AS topic_name, s.name AS subject_name, d.name AS department_name
+       FROM questions q
+       LEFT JOIN topics t ON t.id = q.topic_id
+       LEFT JOIN chapters c ON c.id = t.chapter_id
+       LEFT JOIN subjects s ON s.id = c.subject_id
+       LEFT JOIN departments d ON d.id = s.department_id
+       WHERE ${where}
+       ORDER BY q.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
-    query(`SELECT COUNT(*)::int AS total FROM questions WHERE ${where}`, params.slice(0, -2)),
+    query(
+      `SELECT COUNT(*)::int AS total FROM questions q WHERE ${where}`,
+      params.slice(0, -2),
+    ),
   ]);
   const total = count.rows[0].total as number;
   return {
