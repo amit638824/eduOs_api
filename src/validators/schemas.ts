@@ -38,6 +38,8 @@ export const createOrganizationSchema = z.object({
   logoUrl: z.string().url().optional(),
   theme: z.record(z.unknown()).optional(),
   settings: z.record(z.unknown()).optional(),
+  /** Notify this email when superadmin acts on the org */
+  contactEmail: z.string().email().optional(),
   /** When true, org is immediately active; default pending for approval */
   isActive: z.boolean().optional(),
 });

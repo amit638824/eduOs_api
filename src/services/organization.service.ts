@@ -8,6 +8,7 @@ export interface CreateOrganizationInput {
   logoUrl?: string;
   theme?: Record<string, unknown>;
   settings?: Record<string, unknown>;
+  contactEmail?: string;
   isActive?: boolean;
 }
 
@@ -24,6 +25,9 @@ export async function createOrganization(input: CreateOrganizationInput) {
   const settings = {
     verificationStatus: isActive ? 'verified' : 'pending',
     ...(input.settings ?? {}),
+    ...(input.contactEmail
+      ? { contactEmail: input.contactEmail.toLowerCase().trim() }
+      : {}),
   };
 
   const result = await query(
@@ -99,7 +103,7 @@ export async function updateOrganization(
   await getOrganizationById(id);
 
   let settingsJson: string | null = null;
-  if (input.settings || input.isActive !== undefined) {
+  if (input.settings || input.isActive !== undefined || input.contactEmail !== undefined) {
     const current = await getOrganizationById(id);
     const merged = {
       ...((current.settings as Record<string, unknown>) ?? {}),
@@ -107,6 +111,11 @@ export async function updateOrganization(
     };
     if (input.isActive === true) merged.verificationStatus = 'verified';
     if (input.isActive === false) merged.verificationStatus = 'pending';
+    if (input.contactEmail !== undefined) {
+      const email = input.contactEmail?.trim();
+      if (email) merged.contactEmail = email.toLowerCase();
+      else delete merged.contactEmail;
+    }
     settingsJson = JSON.stringify(merged);
   }
 
@@ -133,6 +142,46 @@ export async function updateOrganization(
   );
 
   return result.rows[0];
+}
+
+/** Org admin + contact emails for platform notifications */
+export async function getOrganizationNotifyEmails(organizationId: string): Promise<string[]> {
+  const [admins, org] = await Promise.all([
+    query<{ email: string }>(
+      `SELECT DISTINCT u.email
+       FROM users u
+       JOIN user_roles ur ON ur.user_id = u.id
+       JOIN roles r ON r.id = ur.role_id
+       WHERE u.organization_id = $1
+         AND u.deleted_at IS NULL
+         AND u.status IN ('active', 'pending')
+         AND r.name IN ('org_admin', 'branch_admin')`,
+      [organizationId],
+    ),
+    query<{ settings: Record<string, unknown> | null }>(
+      `SELECT settings FROM organizations WHERE id = $1`,
+      [organizationId],
+    ),
+  ]);
+
+  const emails = new Set<string>();
+  for (const row of admins.rows) {
+    if (row.email) emails.add(row.email.toLowerCase());
+  }
+
+  const settings = org.rows[0]?.settings ?? {};
+  const contact = settings.contactEmail;
+  if (typeof contact === 'string' && contact.includes('@')) {
+    emails.add(contact.toLowerCase().trim());
+  }
+  const extra = settings.contactEmails;
+  if (Array.isArray(extra)) {
+    for (const e of extra) {
+      if (typeof e === 'string' && e.includes('@')) emails.add(e.toLowerCase().trim());
+    }
+  }
+
+  return Array.from(emails);
 }
 
 /** Approve organization access — activate org + pending users */
