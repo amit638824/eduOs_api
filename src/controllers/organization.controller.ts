@@ -168,6 +168,7 @@ export async function deleteOrganization(
   try {
     const { id } = vParams(req) as { id: string };
     const before = await orgService.getOrganizationById(id);
+    const notifyEmails = await orgService.getOrganizationNotifyEmails(id);
     const result = await orgService.deleteOrganization(id);
 
     fireOrgMail({
@@ -177,6 +178,7 @@ export async function deleteOrganization(
       message:
         'Your organization has been removed from the platform by Super Admin. If you believe this is a mistake, contact support immediately.',
       actorName: actorName(req),
+      extraEmails: notifyEmails,
     });
 
     res.json({ success: true, data: result });
