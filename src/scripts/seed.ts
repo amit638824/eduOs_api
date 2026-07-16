@@ -1,19 +1,21 @@
 /**
  * =============================================================================
- * Super Computer Academy — SINGLE SEED FILE (edit everything below)
+ * EduTech Multi-Vendor Exam Platform — SINGLE SEED FILE
  * =============================================================================
+ *
+ * Hierarchy seeded here:
+ *   Super Admin
+ *     → Organizations (verified / pending)
+ *       → Branches → Departments
+ *       → Users (org_admin, teachers, students, …)
+ *       → Roles → Permissions
+ *       → Department → Subject → Chapter → Topic → Questions → Tests
  *
  * USAGE
  *   npm run db:seed       # wipe all data + insert fresh demo
  *   npm run db:setup      # migrate + seed
  *
- * CONTROL FROM THIS FILE ONLY:
- *   - Password, users, organization, branches
- *   - Tests, questions, assignments
- *   - Payment gateway mode + demo payment records
- *   - Branding, notifications, platform settings
- *   - RBAC roles & permissions (inline SQL below)
- *
+ * Edit ONLY this file for demo data.
  * =============================================================================
  */
 import 'dotenv/config';
@@ -27,21 +29,68 @@ import { hashPassword } from '../utils/security.js';
 
 const SEED_PASSWORD = 'Test@12345';
 
-const ORGANIZATION = {
-  name: 'Super Computer Academy',
-  slug: 'super-computer-academy',
-  theme: { primaryColor: '#2563eb', secondaryColor: '#1e40af' },
-  locale: { timezone: 'Asia/Kolkata', currency: 'INR', language: 'en' },
-  branches: [
-    { key: 'main' as const, name: 'Kerakat Campus', code: 'SCA-MAIN', address: 'Behind Maa Kali Temple, Near S.L.B.S School, Kerakat, Jaunpur, UP' },
-    { key: 'city' as const, name: 'Jaunpur Branch', code: 'SCA-JNP', address: 'Kerakat Road, Jaunpur, UP' },
-  ],
-  departments: [
-    { branchKey: 'main' as const, name: 'Computer Science', code: 'CS' },
-    { branchKey: 'main' as const, name: 'Hardware & Networking', code: 'HW' },
-  ],
-  academicSession: { name: '2025-26', startDate: '2025-04-01', endDate: '2026-03-31', isCurrent: true },
-};
+/**
+ * Multi-vendor orgs.
+ * isActive=false = registered but NOT verified (cannot act until super admin verifies).
+ */
+const ORGANIZATIONS = [
+  {
+    key: 'sca' as const,
+    name: 'Super Computer Academy',
+    slug: 'super-computer-academy',
+    isActive: true,
+    theme: { primaryColor: '#2563eb', secondaryColor: '#1e40af' },
+    locale: { timezone: 'Asia/Kolkata', currency: 'INR', language: 'en' },
+    branches: [
+      {
+        key: 'main' as const,
+        name: 'Kerakat Campus',
+        code: 'SCA-MAIN',
+        address: 'Behind Maa Kali Temple, Near S.L.B.S School, Kerakat, Jaunpur, UP',
+      },
+      {
+        key: 'city' as const,
+        name: 'Jaunpur Branch',
+        code: 'SCA-JNP',
+        address: 'Kerakat Road, Jaunpur, UP',
+      },
+    ],
+    departments: [
+      { branchKey: 'main' as const, name: 'Computer Science', code: 'CS' },
+      { branchKey: 'main' as const, name: 'Hardware & Networking', code: 'HW' },
+      { branchKey: 'city' as const, name: 'Office Automation', code: 'OA' },
+    ],
+    academicSession: {
+      name: '2025-26',
+      startDate: '2025-04-01',
+      endDate: '2026-03-31',
+      isCurrent: true,
+    },
+  },
+  {
+    key: 'pending' as const,
+    name: 'Sunrise Learning Hub',
+    slug: 'sunrise-learning-hub',
+    isActive: false,
+    theme: { primaryColor: '#059669', secondaryColor: '#047857' },
+    locale: { timezone: 'Asia/Kolkata', currency: 'INR', language: 'en' },
+    branches: [
+      {
+        key: 'hq' as const,
+        name: 'Head Office',
+        code: 'SLH-HQ',
+        address: 'Civil Lines, Allahabad, UP',
+      },
+    ],
+    departments: [{ branchKey: 'hq' as const, name: 'General Studies', code: 'GS' }],
+    academicSession: {
+      name: '2025-26',
+      startDate: '2025-04-01',
+      endDate: '2026-03-31',
+      isCurrent: true,
+    },
+  },
+];
 
 /** 'razorpay' = live keys from .env | 'demo' = mock checkout without Razorpay */
 const PAYMENT_GATEWAY = {
@@ -57,9 +106,9 @@ const PAYMENT_GATEWAY = {
 
 const PLATFORM_SETTINGS = {
   branding: {
-    appName: 'Super Computer Academy',
-    parentCompany: 'Super Computer Academy',
-    tagline: 'Online Test & IT Training — Kerakat, Jaunpur',
+    appName: 'EduTech Exam',
+    parentCompany: 'EduTech',
+    tagline: 'Multi-vendor online testing platform',
   },
   social_links: {
     facebook: 'https://facebook.com/supercomputeracademy',
@@ -82,22 +131,172 @@ const PLATFORM_SETTINGS = {
   },
 };
 
+/**
+ * Users — orgKey links to ORGANIZATIONS.key (null = platform super admin).
+ * Pending org users stay status=pending until org is verified.
+ */
 const SEED_USERS = [
-  { email: 'superadmin@edutech.com', firstName: 'Rahul', lastName: 'Sharma', phone: '9876500001', role: 'super_admin' },
-  { email: 'orgadmin@edutech.com', firstName: 'Priya', lastName: 'Verma', phone: '9876500002', role: 'org_admin' },
-  { email: 'branchadmin@edutech.com', firstName: 'Amit', lastName: 'Kumar', phone: '9876500003', role: 'branch_admin', branchCode: 'main' as const },
-  { email: 'teacher1@edutech.com', firstName: 'Sneha', lastName: 'Gupta', phone: '9876500004', role: 'teacher', branchCode: 'main' as const, teacherMeta: { employeeId: 'TCH-001' } },
-  { email: 'teacher2@edutech.com', firstName: 'Vikram', lastName: 'Singh', phone: '9876500005', role: 'teacher', branchCode: 'city' as const, teacherMeta: { employeeId: 'TCH-002' } },
-  { email: 'examiner@edutech.com', firstName: 'Deepak', lastName: 'Rao', phone: '9876500006', role: 'examiner', branchCode: 'main' as const },
-  { email: 'evaluator@edutech.com', firstName: 'Kavita', lastName: 'Nair', phone: '9876500007', role: 'evaluator', branchCode: 'main' as const },
-  { email: 'student1@edutech.com', firstName: 'Arjun', lastName: 'Mehta', phone: '9876500011', role: 'student', branchCode: 'main' as const, studentMeta: { admissionNo: 'ADM-2025-001', batch: 'HW-2026-A', walletBalance: 500 } },
-  { email: 'student2@edutech.com', firstName: 'Isha', lastName: 'Patel', phone: '9876500012', role: 'student', branchCode: 'main' as const, studentMeta: { admissionNo: 'ADM-2025-002', batch: 'HW-2026-A', walletBalance: 250 } },
-  { email: 'student3@edutech.com', firstName: 'Rohan', lastName: 'Das', phone: '9876500013', role: 'student', branchCode: 'city' as const, studentMeta: { admissionNo: 'ADM-2025-003', batch: 'CCC-2026-B', walletBalance: 100 } },
-  { email: 'student4@edutech.com', firstName: 'Ananya', lastName: 'Joshi', phone: '9876500014', role: 'student', branchCode: 'city' as const, studentMeta: { admissionNo: 'ADM-2025-004', batch: 'CCC-2026-B', walletBalance: 0 } },
-  { email: 'student5@edutech.com', firstName: 'Karan', lastName: 'Malhotra', phone: '9876500015', role: 'student', branchCode: 'main' as const, studentMeta: { admissionNo: 'ADM-2025-005', batch: 'DIPLOMA-NET', walletBalance: 750 } },
-  { email: 'parent@edutech.com', firstName: 'Suresh', lastName: 'Mehta', phone: '9876500020', role: 'parent' },
-  { email: 'support@edutech.com', firstName: 'Neha', lastName: 'Reddy', phone: '9876500030', role: 'support' },
-  { email: 'finance@edutech.com', firstName: 'Rajesh', lastName: 'Iyer', phone: '9876500040', role: 'finance' },
+  // Platform
+  {
+    email: 'superadmin@edutech.com',
+    firstName: 'Rahul',
+    lastName: 'Sharma',
+    phone: '9876500001',
+    role: 'super_admin',
+  },
+
+  // Verified org — Super Computer Academy
+  {
+    email: 'orgadmin@edutech.com',
+    firstName: 'Priya',
+    lastName: 'Verma',
+    phone: '9876500002',
+    role: 'org_admin',
+    orgKey: 'sca' as const,
+  },
+  {
+    email: 'branchadmin@edutech.com',
+    firstName: 'Amit',
+    lastName: 'Kumar',
+    phone: '9876500003',
+    role: 'branch_admin',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+  },
+  {
+    email: 'teacher1@edutech.com',
+    firstName: 'Sneha',
+    lastName: 'Gupta',
+    phone: '9876500004',
+    role: 'teacher',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+    teacherMeta: { employeeId: 'TCH-001' },
+  },
+  {
+    email: 'teacher2@edutech.com',
+    firstName: 'Vikram',
+    lastName: 'Singh',
+    phone: '9876500005',
+    role: 'teacher',
+    orgKey: 'sca' as const,
+    branchCode: 'city' as const,
+    teacherMeta: { employeeId: 'TCH-002' },
+  },
+  {
+    email: 'examiner@edutech.com',
+    firstName: 'Deepak',
+    lastName: 'Rao',
+    phone: '9876500006',
+    role: 'examiner',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+  },
+  {
+    email: 'evaluator@edutech.com',
+    firstName: 'Kavita',
+    lastName: 'Nair',
+    phone: '9876500007',
+    role: 'evaluator',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+  },
+  {
+    email: 'student1@edutech.com',
+    firstName: 'Arjun',
+    lastName: 'Mehta',
+    phone: '9876500011',
+    role: 'student',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+    studentMeta: { admissionNo: 'ADM-2025-001', batch: 'HW-2026-A', walletBalance: 500 },
+  },
+  {
+    email: 'student2@edutech.com',
+    firstName: 'Isha',
+    lastName: 'Patel',
+    phone: '9876500012',
+    role: 'student',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+    studentMeta: { admissionNo: 'ADM-2025-002', batch: 'HW-2026-A', walletBalance: 250 },
+  },
+  {
+    email: 'student3@edutech.com',
+    firstName: 'Rohan',
+    lastName: 'Das',
+    phone: '9876500013',
+    role: 'student',
+    orgKey: 'sca' as const,
+    branchCode: 'city' as const,
+    studentMeta: { admissionNo: 'ADM-2025-003', batch: 'CCC-2026-B', walletBalance: 100 },
+  },
+  {
+    email: 'student4@edutech.com',
+    firstName: 'Ananya',
+    lastName: 'Joshi',
+    phone: '9876500014',
+    role: 'student',
+    orgKey: 'sca' as const,
+    branchCode: 'city' as const,
+    studentMeta: { admissionNo: 'ADM-2025-004', batch: 'CCC-2026-B', walletBalance: 0 },
+  },
+  {
+    email: 'student5@edutech.com',
+    firstName: 'Karan',
+    lastName: 'Malhotra',
+    phone: '9876500015',
+    role: 'student',
+    orgKey: 'sca' as const,
+    branchCode: 'main' as const,
+    studentMeta: { admissionNo: 'ADM-2025-005', batch: 'DIPLOMA-NET', walletBalance: 750 },
+  },
+  {
+    email: 'parent@edutech.com',
+    firstName: 'Suresh',
+    lastName: 'Mehta',
+    phone: '9876500020',
+    role: 'parent',
+    orgKey: 'sca' as const,
+  },
+  {
+    email: 'support@edutech.com',
+    firstName: 'Neha',
+    lastName: 'Reddy',
+    phone: '9876500030',
+    role: 'support',
+    orgKey: 'sca' as const,
+  },
+  {
+    email: 'finance@edutech.com',
+    firstName: 'Rajesh',
+    lastName: 'Iyer',
+    phone: '9876500040',
+    role: 'finance',
+    orgKey: 'sca' as const,
+  },
+
+  // Pending org — waiting for super-admin verification
+  {
+    email: 'pending.admin@sunrise.com',
+    firstName: 'Meena',
+    lastName: 'Yadav',
+    phone: '9876500101',
+    role: 'org_admin',
+    orgKey: 'pending' as const,
+    forceStatus: 'pending' as const,
+  },
+  {
+    email: 'pending.teacher@sunrise.com',
+    firstName: 'Ravi',
+    lastName: 'Tiwari',
+    phone: '9876500102',
+    role: 'teacher',
+    orgKey: 'pending' as const,
+    branchCode: 'hq' as const,
+    forceStatus: 'pending' as const,
+    teacherMeta: { employeeId: 'SLH-T01' },
+  },
 ];
 
 const SEED_NOTIFICATIONS = [
@@ -106,9 +305,13 @@ const SEED_NOTIFICATIONS = [
   { email: 'teacher1@edutech.com', title: 'Question Approved', body: '8 questions approved in question bank.' },
   { email: 'orgadmin@edutech.com', title: 'Weekly Report Ready', body: 'Organization analytics report is ready.' },
   { email: 'student2@edutech.com', title: 'Payment Received', body: 'Wallet top-up of ₹500 successful.' },
+  {
+    email: 'superadmin@edutech.com',
+    title: 'Org Pending Verification',
+    body: 'Sunrise Learning Hub registered and awaits your verification.',
+  },
 ];
 
-/** Question bank + tests — add/edit tests here */
 /** Exam security — edit per test in liveTests[].config */
 const EXAM_SECURITY_CONFIG = {
   shuffleQuestions: true,
@@ -122,85 +325,100 @@ const EXAM_SECURITY_CONFIG = {
   maxTabSwitches: 3,
 };
 
+/**
+ * Exam content for verified org (SCA).
+ * Flow: Department → Subject → Chapter → Topic → Questions → Tests
+ */
 const SEED_EXAMS = {
+  orgKey: 'sca' as const,
   questionCategory: 'General Aptitude',
-  subjects: [
+  departments: [
     {
-      name: 'PC Hardware',
       code: 'HW',
-      chapter: 'Computer Components',
-      topic: { name: 'Hardware Basics', difficulty: 2, tags: ['hardware', 'networking'] },
-      questions: [
+      subjects: [
         {
-          type: 'mcq' as const,
-          text: 'Which device is known as the brain of the computer?',
-          options: [
-            { text: 'RAM', correct: false },
-            { text: 'CPU', correct: true },
-            { text: 'HDD', correct: false },
-            { text: 'Monitor', correct: false },
-          ],
-        },
-        {
-          type: 'mcq' as const,
-          text: 'What does RAM stand for?',
-          options: [
-            { text: 'Read Access Memory', correct: false },
-            { text: 'Random Access Memory', correct: true },
-            { text: 'Run All Memory', correct: false },
-            { text: 'Rapid Application Module', correct: false },
-          ],
-        },
-        {
-          type: 'mcq' as const,
-          text: 'Which port is commonly used for network cables?',
-          options: [
-            { text: 'USB', correct: false },
-            { text: 'HDMI', correct: false },
-            { text: 'RJ-45', correct: true },
-            { text: 'VGA', correct: false },
+          name: 'PC Hardware',
+          code: 'HW',
+          chapter: 'Computer Components',
+          topic: { name: 'Hardware Basics', difficulty: 2, tags: ['hardware', 'networking'] },
+          questions: [
+            {
+              type: 'mcq' as const,
+              text: 'Which device is known as the brain of the computer?',
+              options: [
+                { text: 'RAM', correct: false },
+                { text: 'CPU', correct: true },
+                { text: 'HDD', correct: false },
+                { text: 'Monitor', correct: false },
+              ],
+            },
+            {
+              type: 'mcq' as const,
+              text: 'What does RAM stand for?',
+              options: [
+                { text: 'Read Access Memory', correct: false },
+                { text: 'Random Access Memory', correct: true },
+                { text: 'Run All Memory', correct: false },
+                { text: 'Rapid Application Module', correct: false },
+              ],
+            },
+            {
+              type: 'mcq' as const,
+              text: 'Which port is commonly used for network cables?',
+              options: [
+                { text: 'USB', correct: false },
+                { text: 'HDMI', correct: false },
+                { text: 'RJ-45', correct: true },
+                { text: 'VGA', correct: false },
+              ],
+            },
           ],
         },
       ],
     },
     {
-      name: 'Computer Application',
-      code: 'CA',
-      chapter: 'MS Office',
-      topic: { name: 'Word & Excel', difficulty: 3, tags: ['software', 'ccc'] },
-      questions: [
+      code: 'OA',
+      subjects: [
         {
-          type: 'msq' as const,
-          text: 'Which are prime numbers?',
-          options: [
-            { text: '2', correct: true },
-            { text: '4', correct: false },
-            { text: '3', correct: true },
-            { text: '9', correct: false },
+          name: 'Computer Application',
+          code: 'CA',
+          chapter: 'MS Office',
+          topic: { name: 'Word & Excel', difficulty: 3, tags: ['software', 'ccc'] },
+          questions: [
+            {
+              type: 'msq' as const,
+              text: 'Which are prime numbers?',
+              options: [
+                { text: '2', correct: true },
+                { text: '4', correct: false },
+                { text: '3', correct: true },
+                { text: '9', correct: false },
+              ],
+            },
+            {
+              type: 'true_false' as const,
+              text: 'MS Word is used for word processing.',
+              options: [
+                { text: 'True', correct: true },
+                { text: 'False', correct: false },
+              ],
+            },
+            {
+              type: 'fill_blank' as const,
+              text: 'Capital of India is ____.',
+              options: [{ text: 'New Delhi', correct: true }],
+            },
+            {
+              type: 'integer' as const,
+              text: 'What is 12 + 8?',
+              options: [{ value: 20, correct: true }],
+            },
+            {
+              type: 'numerical' as const,
+              text: 'Value of pi (2 decimal places)?',
+              options: [{ value: 3.14, correct: true }],
+            },
           ],
-        },
-        {
-          type: 'true_false' as const,
-          text: 'MS Word is used for word processing.',
-          options: [
-            { text: 'True', correct: true },
-            { text: 'False', correct: false },
-          ],
-        },
-        {
-          type: 'fill_blank' as const,
-          text: 'Capital of India is ____.',
-          options: [{ text: 'New Delhi', correct: true }],
-        },
-        {
-          type: 'integer' as const,
-          text: 'What is 12 + 8?',
-          options: [{ value: 20, correct: true }],
-        },
-        {
-          type: 'numerical' as const,
-          text: 'Value of pi (2 decimal places)?',
-          options: [{ value: 3.14, correct: true }],
         },
       ],
     },
@@ -254,10 +472,10 @@ const SEED_EXAMS = {
 
 const RBAC_SQL = `
 INSERT INTO roles (name, display_name, description, is_system) VALUES
-  ('super_admin', 'Super Admin', 'Platform-wide administrator', TRUE),
-  ('org_admin', 'Organization Admin', 'Manages entire organization', TRUE),
+  ('super_admin', 'Super Admin', 'Platform-wide administrator — manages all organizations', TRUE),
+  ('org_admin', 'Organization Admin', 'Manages entire organization after verification', TRUE),
   ('branch_admin', 'Branch Admin', 'Manages a branch', TRUE),
-  ('teacher', 'Teacher', 'Creates questions and tests', TRUE),
+  ('teacher', 'Teacher', 'Creates questions and tests under department subjects', TRUE),
   ('examiner', 'Examiner', 'Manages exam conduct', TRUE),
   ('evaluator', 'Evaluator', 'Evaluates subjective answers', TRUE),
   ('student', 'Student', 'Takes exams', TRUE),
@@ -272,15 +490,31 @@ INSERT INTO permissions (resource, action, description) VALUES
   ('organization', 'update', 'Update organizations'),
   ('organization', 'delete', 'Delete organizations'),
   ('organization', 'manage', 'Full organization management'),
+  ('organization', 'verify', 'Verify / activate pending organizations'),
   ('branch', 'create', 'Create branches'),
   ('branch', 'read', 'View branches'),
   ('branch', 'update', 'Update branches'),
   ('branch', 'delete', 'Delete branches'),
+  ('department', 'create', 'Create departments'),
+  ('department', 'read', 'View departments'),
+  ('department', 'update', 'Update departments'),
+  ('department', 'delete', 'Delete departments'),
   ('user', 'create', 'Create users'),
   ('user', 'read', 'View users'),
   ('user', 'update', 'Update users'),
   ('user', 'delete', 'Delete users'),
   ('user', 'assign', 'Assign roles to users'),
+  ('role', 'read', 'View roles'),
+  ('role', 'assign', 'Assign roles'),
+  ('permission', 'read', 'View permissions'),
+  ('subject', 'create', 'Create subjects'),
+  ('subject', 'read', 'View subjects'),
+  ('subject', 'update', 'Update subjects'),
+  ('subject', 'delete', 'Delete subjects'),
+  ('topic', 'create', 'Create topics'),
+  ('topic', 'read', 'View topics'),
+  ('topic', 'update', 'Update topics'),
+  ('topic', 'delete', 'Delete topics'),
   ('question', 'create', 'Create questions'),
   ('question', 'read', 'View questions'),
   ('question', 'update', 'Update questions'),
@@ -315,9 +549,11 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r
 JOIN permissions p ON p.resource IN (
-  'organization', 'branch', 'user', 'question', 'test',
-  'attempt', 'result', 'analytics', 'report', 'settings', 'audit_log'
-) WHERE r.name = 'org_admin'
+  'organization', 'branch', 'department', 'user', 'role', 'permission',
+  'subject', 'topic', 'question', 'test',
+  'attempt', 'result', 'analytics', 'report', 'settings', 'audit_log', 'payment'
+) AND NOT (p.resource = 'organization' AND p.action = 'verify')
+WHERE r.name = 'org_admin'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -325,6 +561,7 @@ SELECT r.id, p.id FROM roles r
 JOIN permissions p ON (
   (p.resource = 'question' AND p.action IN ('create', 'read', 'update', 'import'))
   OR (p.resource = 'test' AND p.action IN ('create', 'read', 'update', 'publish', 'assign'))
+  OR (p.resource IN ('subject', 'topic') AND p.action IN ('create', 'read', 'update'))
   OR (p.resource IN ('result', 'analytics', 'report') AND p.action = 'read')
 ) WHERE r.name = 'teacher'
 ON CONFLICT DO NOTHING;
@@ -341,8 +578,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r
 JOIN permissions p ON (
-  p.resource IN ('branch', 'user', 'test', 'attempt', 'result', 'report', 'analytics')
-  AND p.action IN ('read', 'update', 'manage', 'assign')
+  p.resource IN ('branch', 'department', 'user', 'test', 'attempt', 'result', 'report', 'analytics')
+  AND p.action IN ('read', 'update', 'manage', 'assign', 'create')
 ) WHERE r.name = 'branch_admin'
 ON CONFLICT DO NOTHING;
 
@@ -393,7 +630,8 @@ ON CONFLICT DO NOTHING;
 // Types & helpers
 // =============================================================================
 
-type BranchKey = 'main' | 'city';
+type OrgKey = (typeof ORGANIZATIONS)[number]['key'];
+type BranchKey = string;
 
 interface SeedUser {
   email: string;
@@ -401,18 +639,21 @@ interface SeedUser {
   lastName: string;
   phone: string;
   role: string;
+  orgKey?: OrgKey;
   branchCode?: BranchKey;
+  forceStatus?: 'active' | 'pending' | 'inactive' | 'suspended';
   studentMeta?: { admissionNo: string; batch: string; walletBalance?: number };
   teacherMeta?: { employeeId: string };
 }
 
 interface OrgContext {
-  orgId: string;
-  branches: Record<BranchKey, string>;
+  orgIds: Record<OrgKey, string>;
+  branches: Record<OrgKey, Record<string, string>>;
   teacherId: string;
   orgAdminId: string;
   students: Record<string, string>;
   users: Record<string, string>;
+  primaryOrgId: string;
 }
 
 type QuestionOption =
@@ -455,7 +696,7 @@ async function seedRbac(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — Organization & users
+// Step 2 — Organizations & users
 // ---------------------------------------------------------------------------
 
 async function getRoleId(client: PoolClient, roleName: string): Promise<string> {
@@ -468,52 +709,73 @@ async function seedOrgAndUsers(): Promise<OrgContext> {
   const passwordHash = await hashPassword(SEED_PASSWORD);
   const users: Record<string, string> = {};
   const students: Record<string, string> = {};
+  const orgIds = {} as Record<OrgKey, string>;
+  const branches = {} as Record<OrgKey, Record<string, string>>;
 
   return withTransaction(async (client) => {
-    const org = await client.query<{ id: string }>(
-      `INSERT INTO organizations (name, slug, theme, settings) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [
-        ORGANIZATION.name,
-        ORGANIZATION.slug,
-        JSON.stringify(ORGANIZATION.theme),
-        JSON.stringify(ORGANIZATION.locale),
-      ],
-    );
-    const orgId = org.rows[0].id;
-
-    const branches = {} as Record<BranchKey, string>;
-    for (const b of ORGANIZATION.branches) {
+    for (const org of ORGANIZATIONS) {
       const row = await client.query<{ id: string }>(
-        `INSERT INTO branches (organization_id, name, code, address) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [orgId, b.name, b.code, b.address],
+        `INSERT INTO organizations (name, slug, theme, settings, is_active)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [
+          org.name,
+          org.slug,
+          JSON.stringify(org.theme),
+          JSON.stringify({
+            ...org.locale,
+            verificationStatus: org.isActive ? 'verified' : 'pending',
+          }),
+          org.isActive,
+        ],
       );
-      branches[b.key] = row.rows[0].id;
-    }
+      const orgId = row.rows[0].id;
+      orgIds[org.key] = orgId;
+      branches[org.key] = {};
 
-    for (const d of ORGANIZATION.departments) {
-      await client.query(`INSERT INTO departments (branch_id, name, code) VALUES ($1, $2, $3)`, [
-        branches[d.branchKey],
-        d.name,
-        d.code,
-      ]);
-    }
+      for (const b of org.branches) {
+        const br = await client.query<{ id: string }>(
+          `INSERT INTO branches (organization_id, name, code, address) VALUES ($1, $2, $3, $4) RETURNING id`,
+          [orgId, b.name, b.code, b.address],
+        );
+        branches[org.key][b.key] = br.rows[0].id;
+      }
 
-    const s = ORGANIZATION.academicSession;
-    await client.query(
-      `INSERT INTO academic_sessions (organization_id, name, start_date, end_date, is_current) VALUES ($1, $2, $3, $4, $5)`,
-      [orgId, s.name, s.startDate, s.endDate, s.isCurrent],
-    );
+      for (const d of org.departments) {
+        await client.query(`INSERT INTO departments (branch_id, name, code) VALUES ($1, $2, $3)`, [
+          branches[org.key][d.branchKey],
+          d.name,
+          d.code,
+        ]);
+      }
+
+      const s = org.academicSession;
+      await client.query(
+        `INSERT INTO academic_sessions (organization_id, name, start_date, end_date, is_current)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [orgId, s.name, s.startDate, s.endDate, s.isCurrent],
+      );
+
+      console.log(`  + org [${org.key}] ${org.name} (${org.isActive ? 'verified' : 'PENDING'})`);
+    }
 
     let superAdminId: string | null = null;
 
     for (const u of SEED_USERS as SeedUser[]) {
-      const branchId = u.branchCode ? branches[u.branchCode] : null;
-      const organizationId = u.role === 'super_admin' ? null : orgId;
+      const orgId = u.orgKey ? orgIds[u.orgKey] : null;
+      const branchId = u.orgKey && u.branchCode ? branches[u.orgKey][u.branchCode] ?? null : null;
+
+      let status: string = 'active';
+      if (u.forceStatus) {
+        status = u.forceStatus;
+      } else if (u.orgKey) {
+        const org = ORGANIZATIONS.find((o) => o.key === u.orgKey);
+        if (org && !org.isActive) status = 'pending';
+      }
 
       const row = await client.query<{ id: string }>(
         `INSERT INTO users (organization_id, branch_id, email, password_hash, first_name, last_name, phone, status, email_verified)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', TRUE) RETURNING id`,
-        [organizationId, branchId, u.email, passwordHash, u.firstName, u.lastName, u.phone],
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE) RETURNING id`,
+        [orgId, branchId, u.email, passwordHash, u.firstName, u.lastName, u.phone, status],
       );
       const userId = row.rows[0].id;
       users[u.email] = userId;
@@ -525,7 +787,7 @@ async function seedOrgAndUsers(): Promise<OrgContext> {
         superAdminId,
       ]);
 
-      if (u.role === 'student' && u.studentMeta) {
+      if (u.role === 'student' && u.studentMeta && orgId) {
         const st = await client.query<{ id: string }>(
           `INSERT INTO students (user_id, organization_id, branch_id, admission_no, batch, wallet_balance, enrolled_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id`,
@@ -534,7 +796,7 @@ async function seedOrgAndUsers(): Promise<OrgContext> {
         students[u.email] = st.rows[0].id;
       }
 
-      if (u.role === 'teacher' && u.teacherMeta) {
+      if (u.role === 'teacher' && u.teacherMeta && orgId) {
         await client.query(
           `INSERT INTO teachers (user_id, organization_id, branch_id, employee_id) VALUES ($1, $2, $3, $4)`,
           [userId, orgId, branchId, u.teacherMeta.employeeId],
@@ -542,22 +804,23 @@ async function seedOrgAndUsers(): Promise<OrgContext> {
       }
 
       if (u.role === 'super_admin') superAdminId = userId;
-      console.log(`  + ${u.email} [${u.role}]`);
+      console.log(`  + ${u.email} [${u.role}] status=${status}`);
     }
 
     return {
-      orgId,
+      orgIds,
       branches,
       teacherId: users['teacher1@edutech.com'],
       orgAdminId: users['orgadmin@edutech.com'],
       students,
       users,
+      primaryOrgId: orgIds.sca,
     };
   });
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — Examination (from SEED_EXAMS config)
+// Step 3 — Examination (department → subject → topic → questions → tests)
 // ---------------------------------------------------------------------------
 
 async function insertQuestion(
@@ -570,7 +833,15 @@ async function insertQuestion(
   const row = await pool.query<{ id: string }>(
     `INSERT INTO questions (organization_id, category_id, topic_id, created_by, type, status, content, marks, negative_marks, difficulty)
      VALUES ($1, $2, $3, $4, $5, 'approved', $6, 1, $7, 2) RETURNING id`,
-    [orgId, categoryId, topicId, teacherId, q.type, JSON.stringify({ text: q.text }), EXAM_SECURITY_CONFIG.negativeMarking ? 0.25 : 0],
+    [
+      orgId,
+      categoryId,
+      topicId,
+      teacherId,
+      q.type,
+      JSON.stringify({ text: q.text }),
+      EXAM_SECURITY_CONFIG.negativeMarking ? 0.25 : 0,
+    ],
   );
   for (const [i, opt] of q.options.entries()) {
     const content = 'value' in opt ? { value: opt.value } : { text: opt.text };
@@ -583,7 +854,8 @@ async function insertQuestion(
 }
 
 async function seedExamination(ctx: OrgContext): Promise<Record<string, string>> {
-  const { orgId, teacherId, students } = ctx;
+  const orgId = ctx.orgIds[SEED_EXAMS.orgKey];
+  const { teacherId, students } = ctx;
   const testIds: Record<string, string> = {};
   const questionsBySubject = new Map<string, string[]>();
 
@@ -593,26 +865,29 @@ async function seedExamination(ctx: OrgContext): Promise<Record<string, string>>
   );
   const categoryId = category.rows[0].id;
 
-  for (const subject of SEED_EXAMS.subjects) {
-    const sub = await pool.query<{ id: string }>(
-      `INSERT INTO subjects (organization_id, name, code) VALUES ($1, $2, $3) RETURNING id`,
-      [orgId, subject.name, subject.code],
-    );
-    const chapter = await pool.query<{ id: string }>(
-      `INSERT INTO chapters (subject_id, name, sort_order) VALUES ($1, $2, 1) RETURNING id`,
-      [sub.rows[0].id, subject.chapter],
-    );
-    const topic = await pool.query<{ id: string }>(
-      `INSERT INTO topics (chapter_id, name, difficulty, tags, sort_order) VALUES ($1, $2, $3, $4, 1) RETURNING id`,
-      [chapter.rows[0].id, subject.topic.name, subject.topic.difficulty, subject.topic.tags],
-    );
+  for (const dept of SEED_EXAMS.departments) {
+    for (const subject of dept.subjects) {
+      const sub = await pool.query<{ id: string }>(
+        `INSERT INTO subjects (organization_id, name, code) VALUES ($1, $2, $3) RETURNING id`,
+        [orgId, subject.name, subject.code],
+      );
+      const chapter = await pool.query<{ id: string }>(
+        `INSERT INTO chapters (subject_id, name, sort_order) VALUES ($1, $2, 1) RETURNING id`,
+        [sub.rows[0].id, subject.chapter],
+      );
+      const topic = await pool.query<{ id: string }>(
+        `INSERT INTO topics (chapter_id, name, difficulty, tags, sort_order) VALUES ($1, $2, $3, $4, 1) RETURNING id`,
+        [chapter.rows[0].id, subject.topic.name, subject.topic.difficulty, subject.topic.tags],
+      );
 
-    const qids: string[] = [];
-    for (const q of subject.questions) {
-      const useCategory = subject.code === 'CA' ? categoryId : null;
-      qids.push(await insertQuestion(orgId, teacherId, topic.rows[0].id, useCategory, q));
+      const qids: string[] = [];
+      for (const q of subject.questions) {
+        const useCategory = subject.code === 'CA' ? categoryId : null;
+        qids.push(await insertQuestion(orgId, teacherId, topic.rows[0].id, useCategory, q));
+      }
+      questionsBySubject.set(subject.code, qids);
+      console.log(`  + dept ${dept.code} → subject ${subject.code} → topic "${subject.topic.name}" (${qids.length} Qs)`);
     }
-    questionsBySubject.set(subject.code, qids);
   }
 
   const totalQuestions = [...questionsBySubject.values()].reduce((n, arr) => n + arr.length, 0);
@@ -675,9 +950,8 @@ async function seedExamination(ctx: OrgContext): Promise<Record<string, string>>
   const sample = SEED_EXAMS.sampleResult;
   const sampleTestId = testIds[sample.testKey];
   const student1Id = students[sample.studentEmail];
-  const sampleQids = questionsBySubject.get(
-    SEED_EXAMS.liveTests.find((t) => t.key === sample.testKey)?.subjectCode ?? 'HW',
-  ) ?? [];
+  const sampleQids =
+    questionsBySubject.get(SEED_EXAMS.liveTests.find((t) => t.key === sample.testKey)?.subjectCode ?? 'HW') ?? [];
 
   if (sampleTestId && student1Id && sampleQids.length > 0) {
     const attempt = await pool.query<{ id: string }>(
@@ -722,7 +996,9 @@ async function seedExamination(ctx: OrgContext): Promise<Record<string, string>>
     );
   }
 
-  console.log(`  + ${totalQuestions} questions, ${SEED_EXAMS.liveTests.length + SEED_EXAMS.draftTests.length} tests, assignments, 1 sample result`);
+  console.log(
+    `  + ${totalQuestions} questions, ${SEED_EXAMS.liveTests.length + SEED_EXAMS.draftTests.length} tests, assignments, 1 sample result`,
+  );
   return testIds;
 }
 
@@ -739,26 +1015,35 @@ async function seedPlatform(ctx: OrgContext): Promise<void> {
   ];
   for (const s of settingsEntries) {
     await pool.query(`INSERT INTO settings (organization_id, key, value) VALUES ($1, $2, $3)`, [
-      ctx.orgId,
+      ctx.primaryOrgId,
       s.key,
       JSON.stringify(s.value),
     ]);
   }
 
+  // Platform-level branding (org_id null) for super admin console
+  await pool.query(`INSERT INTO settings (organization_id, key, value) VALUES (NULL, 'branding', $1)`, [
+    JSON.stringify(PLATFORM_SETTINGS.branding),
+  ]);
+
   for (const n of SEED_NOTIFICATIONS) {
+    const uid = ctx.users[n.email];
+    if (!uid) continue;
     await pool.query(
       `INSERT INTO notifications (user_id, channel, title, body, sent_at) VALUES ($1, 'in_app', $2, $3, NOW())`,
-      [ctx.users[n.email], n.title, n.body],
+      [uid, n.title, n.body],
     );
   }
 
   for (const p of PAYMENT_GATEWAY.demoPayments) {
+    const uid = ctx.users[p.email];
+    if (!uid) continue;
     await pool.query(
       `INSERT INTO payments (organization_id, user_id, amount, currency, status, gateway_ref, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
-        ctx.orgId,
-        ctx.users[p.email],
+        ctx.primaryOrgId,
+        uid,
         p.amount,
         PAYMENT_GATEWAY.currency,
         p.status,
@@ -774,11 +1059,17 @@ async function seedPlatform(ctx: OrgContext): Promise<void> {
     { action: 'assign', resource: 'test', userId: ctx.orgAdminId },
     { action: 'login', resource: 'session', userId: ctx.users['student1@edutech.com'] },
     { action: 'export', resource: 'report', userId: ctx.orgAdminId },
+    {
+      action: 'register',
+      resource: 'organization',
+      userId: ctx.users['superadmin@edutech.com'],
+    },
   ];
   for (const a of audits) {
+    if (!a.userId) continue;
     await pool.query(
       `INSERT INTO audit_logs (organization_id, user_id, action, resource, ip_address) VALUES ($1, $2, $3, $4, '127.0.0.1')`,
-      [ctx.orgId, a.userId, a.action, a.resource],
+      [ctx.primaryOrgId, a.userId, a.action, a.resource],
     );
   }
 
@@ -789,13 +1080,16 @@ async function seedPlatform(ctx: OrgContext): Promise<void> {
     { userId: ctx.users['orgadmin@edutech.com'], activity: 'user_created', meta: { role: 'student' } },
   ];
   for (const act of activities) {
+    if (!act.userId) continue;
     await pool.query(
       `INSERT INTO activity_logs (user_id, activity, metadata, ip_address) VALUES ($1, $2, $3, '127.0.0.1')`,
       [act.userId, act.activity, JSON.stringify(act.meta)],
     );
   }
 
-  console.log(`  + settings, ${SEED_NOTIFICATIONS.length} notifications, ${PAYMENT_GATEWAY.demoPayments.length} payments (gateway: ${PAYMENT_GATEWAY.provider})`);
+  console.log(
+    `  + settings, ${SEED_NOTIFICATIONS.length} notifications, ${PAYMENT_GATEWAY.demoPayments.length} payments (gateway: ${PAYMENT_GATEWAY.provider})`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -805,25 +1099,32 @@ async function seedPlatform(ctx: OrgContext): Promise<void> {
 function printSummary(): void {
   console.log(`
 ${'='.repeat(60)}
-  SEED COMPLETE — Demo Credentials
+  SEED COMPLETE — Multi-Vendor Demo Credentials
 ${'='.repeat(60)}
   Password (all users): ${SEED_PASSWORD}
   Payment gateway:      ${PAYMENT_GATEWAY.provider}
 
-  student1@edutech.com   →  /dashboard/student-dashboard
-  teacher1@edutech.com   →  /dashboard/teacher-dashboard
-  orgadmin@edutech.com   →  /dashboard/admin-dashboard
+  Hierarchy:
+    Super Admin → Organizations → Departments → Users → Roles
+    Department → Subject → Topic → Questions → Tests
+
+  Login accounts:
+    superadmin@edutech.com     platform super admin
+    orgadmin@edutech.com       verified org admin (SCA)
+    teacher1@edutech.com       teacher
+    student1@edutech.com       student
+    pending.admin@sunrise.com  PENDING org (is_active=false)
 
   UI:    http://localhost:5173/login
   API:   http://127.0.0.1:3000/api/v1/health
 
-  Edit users/tests/payments: eduOs_api/src/scripts/seed.ts
+  Edit data only in: eduOs_api/src/scripts/seed.ts
 ${'='.repeat(60)}
 `);
 }
 
 async function main(): Promise<void> {
-  console.log('\n[Super Computer Academy] Seed — wipe & fresh insert (single file)\n');
+  console.log('\n[EduTech] Multi-vendor seed — wipe & fresh insert (single file)\n');
 
   console.log('STEP 1/4 — Delete all existing records');
   await resetDatabase();
@@ -831,7 +1132,7 @@ async function main(): Promise<void> {
   console.log('\nSTEP 2/4 — RBAC (roles & permissions)');
   await seedRbac();
 
-  console.log('\nSTEP 3/4 — Organization, users & examination');
+  console.log('\nSTEP 3/4 — Organizations, users & examination');
   const ctx = await seedOrgAndUsers();
   await seedExamination(ctx);
 

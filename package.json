@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
+    "db:seed": "tsx src/scripts/seed.ts",
     "db:setup": "npm run db:migrate && npm run db:seed",
     "test:phase1": "tsx src/scripts/test-phase1.ts",
     "test:negative": "tsx src/scripts/test-negative-phase1.ts",
