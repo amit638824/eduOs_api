@@ -180,7 +180,7 @@ export async function updateOrganization(
       ...(input.settings ?? {}),
     };
     if (input.isActive === true) merged.verificationStatus = 'verified';
-    if (input.isActive === false) merged.verificationStatus = 'pending';
+    if (input.isActive === false) merged.verificationStatus = 'suspended';
     if (input.contactEmail !== undefined) {
       const email = input.contactEmail?.trim();
       if (email) merged.contactEmail = email.toLowerCase();
@@ -196,7 +196,7 @@ export async function updateOrganization(
        logo_url = COALESCE($4, logo_url),
        theme = COALESCE($5, theme),
        settings = COALESCE($6, settings),
-       is_active = COALESCE($7, is_active),
+       is_active = CASE WHEN $7::boolean IS NULL THEN is_active ELSE $7::boolean END,
        updated_at = NOW()
      WHERE id = $1 AND deleted_at IS NULL
      RETURNING id, name, slug, logo_url, theme, settings, is_active, updated_at`,
@@ -207,11 +207,30 @@ export async function updateOrganization(
       input.logoUrl ?? null,
       input.theme ? JSON.stringify(input.theme) : null,
       settingsJson,
-      input.isActive ?? null,
+      input.isActive === undefined ? null : input.isActive,
     ],
   );
 
-  return result.rows[0];
+  const updated = result.rows[0];
+
+  // Sync org users when Super Admin toggles approval / suspend
+  if (input.isActive === true) {
+    await query(
+      `UPDATE users SET status = 'active', updated_at = NOW()
+       WHERE organization_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
+      [id],
+    );
+  } else if (input.isActive === false) {
+    await query(
+      `UPDATE users SET status = 'suspended', updated_at = NOW()
+       WHERE organization_id = $1
+         AND status IN ('active', 'pending')
+         AND deleted_at IS NULL`,
+      [id],
+    );
+  }
+
+  return updated;
 }
 
 /** Org admin + contact emails for platform notifications */
