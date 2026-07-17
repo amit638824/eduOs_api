@@ -1,9 +1,18 @@
 import { query } from '../config/database.js';
-import { ForbiddenError, NotFoundError } from '../utils/errors.js';
+import { NotFoundError } from '../utils/errors.js';
+import { assertSameOrg } from '../utils/orgAccess.js';
 import { PaginatedResult } from '../types/express.js';
 import { getBranchById } from './organization.service.js';
 
-export async function listDepartments(branchId: string, page: number, limit: number) {
+export async function listDepartments(
+  branchId: string,
+  page: number,
+  limit: number,
+  selectedOrgId: string,
+) {
+  const branch = await getBranchById(branchId);
+  assertSameOrg(branch.organization_id as string, selectedOrgId);
+
   const offset = (page - 1) * limit;
   const [data, count] = await Promise.all([
     query(
@@ -27,13 +36,10 @@ export async function listDepartments(branchId: string, page: number, limit: num
 export async function createDepartment(
   branchId: string,
   input: { name: string; code?: string },
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
+  selectedOrgId: string,
 ) {
   const branch = await getBranchById(branchId);
-  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
-    throw new ForbiddenError('Cannot manage departments for another organization');
-  }
+  assertSameOrg(branch.organization_id as string, selectedOrgId, 'Cannot manage departments for another organization');
   const result = await query(
     `INSERT INTO departments (branch_id, name, code) VALUES ($1, $2, $3)
      RETURNING id, branch_id, name, code, is_active, created_at`,
@@ -45,8 +51,7 @@ export async function createDepartment(
 export async function updateDepartment(
   id: string,
   input: { name?: string; code?: string; isActive?: boolean },
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
+  selectedOrgId: string,
 ) {
   const dept = await query<{ branch_id: string }>(
     `SELECT branch_id FROM departments WHERE id = $1 AND deleted_at IS NULL`,
@@ -54,9 +59,7 @@ export async function updateDepartment(
   );
   if (!dept.rows[0]) throw new NotFoundError('Department');
   const branch = await getBranchById(dept.rows[0].branch_id);
-  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
-    throw new ForbiddenError('Cannot manage departments for another organization');
-  }
+  assertSameOrg(branch.organization_id as string, selectedOrgId, 'Cannot manage departments for another organization');
   const result = await query(
     `UPDATE departments SET
        name = COALESCE($2, name),
@@ -70,20 +73,14 @@ export async function updateDepartment(
   return result.rows[0];
 }
 
-export async function deleteDepartment(
-  id: string,
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
-) {
+export async function deleteDepartment(id: string, selectedOrgId: string) {
   const dept = await query<{ branch_id: string }>(
     `SELECT branch_id FROM departments WHERE id = $1 AND deleted_at IS NULL`,
     [id],
   );
   if (!dept.rows[0]) throw new NotFoundError('Department');
   const branch = await getBranchById(dept.rows[0].branch_id);
-  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
-    throw new ForbiddenError('Cannot manage departments for another organization');
-  }
+  assertSameOrg(branch.organization_id as string, selectedOrgId, 'Cannot manage departments for another organization');
   await query(`UPDATE departments SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);
   return { message: 'Department deleted' };
 }

@@ -393,11 +393,10 @@ export async function updateBranch(
     settings?: Record<string, unknown>;
     isActive?: boolean;
   },
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
+  selectedOrgId: string,
 ) {
   const branch = await getBranchById(id);
-  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
+  if (branch.organization_id !== selectedOrgId) {
     throw new ForbiddenError('Cannot update branch for another organization');
   }
   const result = await query(
@@ -422,13 +421,9 @@ export async function updateBranch(
   return result.rows[0];
 }
 
-export async function deleteBranch(
-  id: string,
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
-) {
+export async function deleteBranch(id: string, selectedOrgId: string) {
   const branch = await getBranchById(id);
-  if (!isSuperAdmin && requesterOrgId !== branch.organization_id) {
+  if (branch.organization_id !== selectedOrgId) {
     throw new ForbiddenError('Cannot delete branch for another organization');
   }
   await query(`UPDATE branches SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);

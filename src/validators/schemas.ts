@@ -266,11 +266,19 @@ export const createAdminUserSchema = z.object({
 });
 
 export const assignRoleSchema = z.object({
-  role: z.string().min(1).max(50),
+  role: z.enum(['student', 'teacher', 'org_admin']),
 });
 
 export const updateUserStatusSchema = z.object({
   status: z.enum(['active', 'inactive', 'suspended']),
+});
+
+export const updateAdminUserSchema = z.object({
+  firstName: z.string().min(1).max(100).trim().optional(),
+  lastName: z.string().min(1).max(100).trim().optional(),
+  phone: z.string().max(20).optional(),
+  branchId: z.string().uuid().nullable().optional(),
+  role: z.enum(['student', 'teacher', 'org_admin']).optional(),
 });
 
 export const createNotificationSchema = z.object({
@@ -310,7 +318,8 @@ export const upsertSettingSchema = z.object({
 });
 
 export const updateTestSchema = createTestSchema.partial().extend({
-  status: z.enum(['draft', 'scheduled', 'live', 'completed', 'archived']).optional(),
+  // 'live' is intentionally excluded — use the dedicated publish endpoint
+  status: z.enum(['draft', 'scheduled', 'completed', 'archived']).optional(),
 });
 
 export const listUsersQuerySchema = paginationSchema.extend({

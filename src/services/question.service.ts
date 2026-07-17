@@ -1,5 +1,5 @@
 import { query, withTransaction } from '../config/database.js';
-import { NotFoundError } from '../utils/errors.js';
+import { ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 
 export interface QuestionOptionInput {
@@ -96,6 +96,8 @@ export async function createQuestion(
   input: CreateQuestionInput,
 ) {
   return withTransaction(async (client) => {
+    await assertRelatedIdsInOrg(client, organizationId, input);
+
     const q = await client.query(
       `INSERT INTO questions (
          organization_id, category_id, topic_id, created_by, type, content, explanation,
@@ -143,6 +145,8 @@ export async function updateQuestion(
       [id, organizationId],
     );
     if (!existing.rows[0]) throw new NotFoundError('Question');
+
+    await assertRelatedIdsInOrg(client, organizationId, input);
 
     const q = await client.query(
       `UPDATE questions SET
@@ -227,4 +231,33 @@ export async function createCategory(organizationId: string, input: { name: stri
     [organizationId, input.name, input.parentId ?? null],
   );
   return result.rows[0];
+}
+
+async function assertRelatedIdsInOrg(
+  client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  organizationId: string,
+  input: CreateQuestionInput,
+) {
+  if (input.topicId) {
+    const topic = await client.query(
+      `SELECT t.id
+       FROM topics t
+       JOIN chapters c ON c.id = t.chapter_id
+       JOIN subjects s ON s.id = c.subject_id
+       JOIN departments d ON d.id = s.department_id
+       JOIN branches b ON b.id = d.branch_id
+       WHERE t.id = $1 AND b.organization_id = $2`,
+      [input.topicId, organizationId],
+    );
+    if (!topic.rows[0]) throw new ForbiddenError('Topic does not belong to the selected organization');
+  }
+  if (input.categoryId) {
+    const category = await client.query(
+      `SELECT id FROM question_categories WHERE id = $1 AND organization_id = $2`,
+      [input.categoryId, organizationId],
+    );
+    if (!category.rows[0]) {
+      throw new ForbiddenError('Category does not belong to the selected organization');
+    }
+  }
 }

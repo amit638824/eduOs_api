@@ -122,6 +122,21 @@ export function requireRoles(...allowedRoles: string[]) {
   };
 }
 
+/** Block Super Admin from mutating protected read-only modules (payments, attempts, ranks). */
+export function forbidSuperAdmin(message = 'Super Admin has read-only access to this resource') {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      next(new UnauthorizedError());
+      return;
+    }
+    if (req.user.roles.includes('super_admin')) {
+      next(new ForbiddenError(message));
+      return;
+    }
+    next();
+  };
+}
+
 export function requirePermission(resource: string, action: string) {
   const permission = `${resource}:${action}`;
   return (req: Request, _res: Response, next: NextFunction): void => {

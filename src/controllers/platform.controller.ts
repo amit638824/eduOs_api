@@ -10,7 +10,7 @@ import * as auditService from '../services/audit.service.js';
 import * as reportService from '../services/report.service.js';
 import * as orgService from '../services/organization.service.js';
 import { sendUserCredentialsEmail } from '../services/email.service.js';
-import { requireOrgId, resolveOrganizationId } from '../utils/orgAccess.js';
+import { resolveOrganizationId } from '../utils/orgAccess.js';
 
 async function orgContext(req: Request) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
@@ -27,13 +27,8 @@ export async function listDepartments(req: Request, res: Response, next: NextFun
   try {
     const { branchId } = vParams(req) as { branchId: string };
     const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    await orgService.getBranchById(branchId);
-    if (!isSuperAdmin) {
-      const branch = await orgService.getBranchById(branchId);
-      requireOrgId(branch.organization_id === requesterOrgId ? requesterOrgId : null);
-    }
-    const result = await deptService.listDepartments(branchId, page, limit);
+    const { orgId } = await orgContext(req);
+    const result = await deptService.listDepartments(branchId, page, limit, orgId);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -43,8 +38,8 @@ export async function listDepartments(req: Request, res: Response, next: NextFun
 export async function createDepartment(req: Request, res: Response, next: NextFunction) {
   try {
     const { branchId } = vParams(req) as { branchId: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const dept = await deptService.createDepartment(branchId, req.body, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const dept = await deptService.createDepartment(branchId, req.body, orgId);
     res.status(201).json({ success: true, data: dept });
   } catch (e) {
     next(e);
@@ -54,8 +49,8 @@ export async function createDepartment(req: Request, res: Response, next: NextFu
 export async function updateDepartment(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const dept = await deptService.updateDepartment(id, req.body, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const dept = await deptService.updateDepartment(id, req.body, orgId);
     res.json({ success: true, data: dept });
   } catch (e) {
     next(e);
@@ -65,8 +60,8 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
 export async function deleteDepartment(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const result = await deptService.deleteDepartment(id, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const result = await deptService.deleteDepartment(id, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -86,13 +81,8 @@ export async function listAcademicSessions(req: Request, res: Response, next: Ne
 
 export async function createAcademicSession(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const session = await sessionService.createAcademicSession(
-      orgId,
-      req.body,
-      requesterOrgId,
-      isSuperAdmin,
-    );
+    const { orgId } = await orgContext(req);
+    const session = await sessionService.createAcademicSession(orgId, req.body);
     res.status(201).json({ success: true, data: session });
   } catch (e) {
     next(e);
@@ -102,13 +92,8 @@ export async function createAcademicSession(req: Request, res: Response, next: N
 export async function updateAcademicSession(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const session = await sessionService.updateAcademicSession(
-      id,
-      req.body,
-      requesterOrgId,
-      isSuperAdmin,
-    );
+    const { orgId } = await orgContext(req);
+    const session = await sessionService.updateAcademicSession(id, req.body, orgId);
     res.json({ success: true, data: session });
   } catch (e) {
     next(e);
@@ -118,8 +103,8 @@ export async function updateAcademicSession(req: Request, res: Response, next: N
 export async function deleteAcademicSession(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const result = await sessionService.deleteAcademicSession(id, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const result = await sessionService.deleteAcademicSession(id, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -144,8 +129,8 @@ export async function listUsers(req: Request, res: Response, next: NextFunction)
 
 export async function createUser(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const user = await adminUserService.createUser(orgId, req.body, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const user = await adminUserService.createUser(orgId, req.body);
 
     let orgName: string | undefined;
     try {
@@ -170,17 +155,44 @@ export async function createUser(req: Request, res: Response, next: NextFunction
   }
 }
 
+export async function getUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = vParams(req) as { userId: string };
+    const { orgId } = await orgContext(req);
+    const user = await adminUserService.getUser(userId, orgId);
+    res.json({ success: true, data: user });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = vParams(req) as { userId: string };
+    const { orgId } = await orgContext(req);
+    const user = await adminUserService.updateUser(userId, orgId, req.body);
+    res.json({ success: true, data: user });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function deleteUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = vParams(req) as { userId: string };
+    const { orgId } = await orgContext(req);
+    const result = await adminUserService.softDeleteUser(userId, orgId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function assignRole(req: Request, res: Response, next: NextFunction) {
   try {
     const { userId } = vParams(req) as { userId: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const result = await adminUserService.assignRole(
-      userId,
-      req.body.role,
-      orgId,
-      requesterOrgId,
-      isSuperAdmin,
-    );
+    const { orgId } = await orgContext(req);
+    const result = await adminUserService.assignRole(userId, req.body.role, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -191,14 +203,8 @@ export async function revokeRole(req: Request, res: Response, next: NextFunction
   try {
     const { userId } = vParams(req) as { userId: string };
     const { role } = vQuery(req) as { role: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const result = await adminUserService.revokeRole(
-      userId,
-      role,
-      orgId,
-      requesterOrgId,
-      isSuperAdmin,
-    );
+    const { orgId } = await orgContext(req);
+    const result = await adminUserService.revokeRole(userId, role, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -208,14 +214,8 @@ export async function revokeRole(req: Request, res: Response, next: NextFunction
 export async function updateUserStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const { userId } = vParams(req) as { userId: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const user = await adminUserService.updateUserStatus(
-      userId,
-      req.body.status,
-      orgId,
-      requesterOrgId,
-      isSuperAdmin,
-    );
+    const { orgId } = await orgContext(req);
+    const user = await adminUserService.updateUserStatus(userId, req.body.status, orgId);
     res.json({ success: true, data: user });
   } catch (e) {
     next(e);
@@ -382,14 +382,8 @@ export async function getSettings(req: Request, res: Response, next: NextFunctio
 
 export async function upsertSetting(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const setting = await settingsService.upsertSetting(
-      orgId,
-      req.body.key,
-      req.body.value,
-      requesterOrgId,
-      isSuperAdmin,
-    );
+    const { orgId } = await orgContext(req);
+    const setting = await settingsService.upsertSetting(orgId, req.body.key, req.body.value);
     res.json({ success: true, data: setting });
   } catch (e) {
     next(e);
@@ -399,8 +393,8 @@ export async function upsertSetting(req: Request, res: Response, next: NextFunct
 export async function deleteSetting(req: Request, res: Response, next: NextFunction) {
   try {
     const { key } = vParams(req) as { key: string };
-    const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const result = await settingsService.deleteSetting(orgId, key, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const result = await settingsService.deleteSetting(orgId, key);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -483,8 +477,8 @@ export async function getOrgOverviewReport(req: Request, res: Response, next: Ne
 export async function updateBranch(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const branch = await orgService.updateBranch(id, req.body, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const branch = await orgService.updateBranch(id, req.body, orgId);
     res.json({ success: true, data: branch });
   } catch (e) {
     next(e);
@@ -494,8 +488,8 @@ export async function updateBranch(req: Request, res: Response, next: NextFuncti
 export async function deleteBranch(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const result = await orgService.deleteBranch(id, requesterOrgId, isSuperAdmin);
+    const { orgId } = await orgContext(req);
+    const result = await orgService.deleteBranch(id, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);

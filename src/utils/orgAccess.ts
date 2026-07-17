@@ -18,7 +18,7 @@ function headerOrgId(req: Request): string | null {
 /**
  * Resolve organization context:
  * - org users → their organization_id
- * - super_admin → X-Organization-Id header if set, else first org
+ * - super_admin → requires valid X-Organization-Id (no silent fallback)
  */
 export async function resolveOrganizationId(
   organizationId: string | null | undefined,
@@ -29,25 +29,31 @@ export async function resolveOrganizationId(
 
   if (isSuperAdmin && req) {
     const fromHeader = headerOrgId(req);
-    if (fromHeader) {
-      const exists = await query<{ id: string }>(
-        `SELECT id FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
-        [fromHeader],
-      );
-      if (exists.rows[0]?.id) return exists.rows[0].id;
-      throw new ForbiddenError('Selected organization not found');
+    if (!fromHeader) {
+      throw new ForbiddenError('X-Organization-Id header required for Super Admin');
     }
+    const exists = await query<{ id: string }>(
+      `SELECT id FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
+      [fromHeader],
+    );
+    if (exists.rows[0]?.id) return exists.rows[0].id;
+    throw new ForbiddenError('Selected organization not found');
   }
 
   if (organizationId) return organizationId;
 
-  if (isSuperAdmin) {
-    const result = await query<{ id: string }>(
-      `SELECT id FROM organizations WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`,
-    );
-    if (result.rows[0]?.id) return result.rows[0].id;
-  }
   throw new ForbiddenError('Organization context required');
+}
+
+/** Resource must belong to the resolved (selected) organization */
+export function assertSameOrg(
+  resourceOrgId: string | null | undefined,
+  selectedOrgId: string,
+  message = 'Resource does not belong to the selected organization',
+): void {
+  if (!resourceOrgId || resourceOrgId !== selectedOrgId) {
+    throw new ForbiddenError(message);
+  }
 }
 
 export function canAccessOrg(

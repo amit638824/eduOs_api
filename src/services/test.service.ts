@@ -69,7 +69,13 @@ export async function getTestById(id: string, organizationId: string) {
     ),
   ]);
 
-  return { ...test.rows[0], sections: sections.rows, questions: questions.rows };
+  const assignments = await listTestAssignments(id, organizationId);
+  return {
+    ...test.rows[0],
+    sections: sections.rows,
+    questions: questions.rows,
+    assignments,
+  };
 }
 
 export async function listTestAssignments(testId: string, organizationId: string) {
@@ -157,11 +163,21 @@ export async function addQuestionToTest(
 ) {
   await assertTestOrg(testId, organizationId);
   const qCheck = await query(
-    `SELECT id FROM questions WHERE id = $1 AND organization_id = $2 AND status = 'approved'`,
+    `SELECT id FROM questions WHERE id = $1 AND organization_id = $2 AND status = 'approved' AND archived_at IS NULL`,
     [input.questionId, organizationId],
   );
   if (!qCheck.rows[0]) {
     throw new ForbiddenError('Question must be approved and belong to your organization');
+  }
+
+  if (input.sectionId) {
+    const section = await query(
+      `SELECT ts.id FROM test_sections ts
+       JOIN tests t ON t.id = ts.test_id
+       WHERE ts.id = $1 AND ts.test_id = $2 AND t.organization_id = $3`,
+      [input.sectionId, testId, organizationId],
+    );
+    if (!section.rows[0]) throw new ForbiddenError('Section does not belong to this test');
   }
 
   try {
@@ -187,12 +203,32 @@ export async function addQuestionToTest(
   }
 }
 
+export async function removeQuestionFromTest(
+  testId: string,
+  organizationId: string,
+  questionId: string,
+) {
+  await assertTestOrg(testId, organizationId);
+  const result = await query(
+    `DELETE FROM test_questions
+     WHERE test_id = $1 AND question_id = $2
+     RETURNING id`,
+    [testId, questionId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('Test question');
+  await recalcTestTotalMarks(testId);
+  return { testId, questionId, removed: true };
+}
+
 export async function updateTest(
   testId: string,
   organizationId: string,
   input: Partial<CreateTestInput & { status?: string }>,
 ) {
   await assertTestOrg(testId, organizationId);
+  if (input.status === 'live') {
+    throw new ForbiddenError('Use the publish endpoint to set a test live');
+  }
   const result = await query(
     `UPDATE tests SET
        title = COALESCE($3, title),
@@ -223,6 +259,18 @@ export async function updateTest(
   );
   if (!result.rows[0]) throw new NotFoundError('Test');
   return result.rows[0];
+}
+
+export async function deleteTest(testId: string, organizationId: string) {
+  await assertTestOrg(testId, organizationId);
+  const result = await query(
+    `UPDATE tests SET archived_at = NOW(), status = 'archived', updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL
+     RETURNING id`,
+    [testId, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('Test');
+  return { id: result.rows[0].id, deleted: true };
 }
 
 export async function publishTest(testId: string, organizationId: string) {
@@ -265,6 +313,28 @@ export async function assignTestToStudent(
     [testId, studentId, scheduledAt ?? null],
   );
   return result.rows[0];
+}
+
+export async function unassignStudentFromTest(
+  testId: string,
+  organizationId: string,
+  studentId: string,
+) {
+  await assertTestOrg(testId, organizationId);
+  const student = await query(
+    `SELECT id FROM students WHERE id = $1 AND organization_id = $2`,
+    [studentId, organizationId],
+  );
+  if (!student.rows[0]) throw new NotFoundError('Student');
+
+  const result = await query(
+    `DELETE FROM test_assignments
+     WHERE test_id = $1 AND assignee_type = 'student' AND assignee_id = $2
+     RETURNING id`,
+    [testId, studentId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('Assignment');
+  return { testId, studentId, removed: true };
 }
 
 export async function listStudentAssignedTests(studentId: string, organizationId: string) {

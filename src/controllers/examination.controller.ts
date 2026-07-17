@@ -251,6 +251,17 @@ export async function updateTest(req: Request, res: Response, next: NextFunction
   }
 }
 
+export async function deleteTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const result = await testService.deleteTest(id, orgId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function addTestSection(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
@@ -268,6 +279,17 @@ export async function addQuestionToTest(req: Request, res: Response, next: NextF
     const { id } = vParams(req) as { id: string };
     const row = await testService.addQuestionToTest(id, orgId, req.body);
     res.status(201).json({ success: true, data: row });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function removeQuestionFromTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id, questionId } = vParams(req) as { id: string; questionId: string };
+    const result = await testService.removeQuestionFromTest(id, orgId, questionId);
+    res.json({ success: true, data: result });
   } catch (e) {
     next(e);
   }
@@ -291,6 +313,17 @@ export async function assignTest(req: Request, res: Response, next: NextFunction
     const { studentId, scheduledAt } = req.body as { studentId: string; scheduledAt?: string };
     const assignment = await testService.assignTestToStudent(id, orgId, studentId, scheduledAt);
     res.status(201).json({ success: true, data: assignment });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function unassignStudentFromTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id, studentId } = vParams(req) as { id: string; studentId: string };
+    const result = await testService.unassignStudentFromTest(id, orgId, studentId);
+    res.json({ success: true, data: result });
   } catch (e) {
     next(e);
   }

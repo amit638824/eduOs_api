@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
-import { ForbiddenError, NotFoundError } from '../utils/errors.js';
+import { NotFoundError } from '../utils/errors.js';
+import { assertSameOrg } from '../utils/orgAccess.js';
 import { PaginatedResult } from '../types/express.js';
 import { getOrganizationById } from './organization.service.js';
 
@@ -26,12 +27,7 @@ export async function listAcademicSessions(organizationId: string, page: number,
 export async function createAcademicSession(
   organizationId: string,
   input: { name: string; startDate: string; endDate: string; isCurrent?: boolean },
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
 ) {
-  if (!isSuperAdmin && requesterOrgId !== organizationId) {
-    throw new ForbiddenError('Cannot manage sessions for another organization');
-  }
   await getOrganizationById(organizationId);
   if (input.isCurrent) {
     await query(`UPDATE academic_sessions SET is_current = FALSE WHERE organization_id = $1`, [
@@ -50,17 +46,18 @@ export async function createAcademicSession(
 export async function updateAcademicSession(
   id: string,
   input: { name?: string; startDate?: string; endDate?: string; isCurrent?: boolean },
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
+  selectedOrgId: string,
 ) {
   const session = await query<{ organization_id: string }>(
     `SELECT organization_id FROM academic_sessions WHERE id = $1`,
     [id],
   );
   if (!session.rows[0]) throw new NotFoundError('Academic session');
-  if (!isSuperAdmin && requesterOrgId !== session.rows[0].organization_id) {
-    throw new ForbiddenError('Cannot manage sessions for another organization');
-  }
+  assertSameOrg(
+    session.rows[0].organization_id,
+    selectedOrgId,
+    'Cannot manage sessions for another organization',
+  );
   if (input.isCurrent) {
     await query(`UPDATE academic_sessions SET is_current = FALSE WHERE organization_id = $1`, [
       session.rows[0].organization_id,
@@ -86,19 +83,17 @@ export async function updateAcademicSession(
   return result.rows[0];
 }
 
-export async function deleteAcademicSession(
-  id: string,
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
-) {
+export async function deleteAcademicSession(id: string, selectedOrgId: string) {
   const session = await query<{ organization_id: string }>(
     `SELECT organization_id FROM academic_sessions WHERE id = $1`,
     [id],
   );
   if (!session.rows[0]) throw new NotFoundError('Academic session');
-  if (!isSuperAdmin && requesterOrgId !== session.rows[0].organization_id) {
-    throw new ForbiddenError('Cannot manage sessions for another organization');
-  }
+  assertSameOrg(
+    session.rows[0].organization_id,
+    selectedOrgId,
+    'Cannot manage sessions for another organization',
+  );
   await query(`DELETE FROM academic_sessions WHERE id = $1`, [id]);
   return { message: 'Academic session deleted' };
 }

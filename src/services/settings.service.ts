@@ -1,9 +1,9 @@
 import { query } from '../config/database.js';
 import { ForbiddenError } from '../utils/errors.js';
 
-export async function getSettings(organizationId: string | null, keys?: string[]) {
+export async function getSettings(organizationId: string, keys?: string[]) {
   const params: unknown[] = [organizationId];
-  let where = 'organization_id IS NOT DISTINCT FROM $1';
+  let where = 'organization_id = $1';
   if (keys?.length) {
     params.push(keys);
     where += ` AND key = ANY($${params.length}::text[])`;
@@ -15,15 +15,9 @@ export async function getSettings(organizationId: string | null, keys?: string[]
   return result.rows;
 }
 
-export async function upsertSetting(
-  organizationId: string | null,
-  key: string,
-  value: unknown,
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
-) {
-  if (organizationId && !isSuperAdmin && requesterOrgId !== organizationId) {
-    throw new ForbiddenError('Cannot update settings for another organization');
+export async function upsertSetting(organizationId: string, key: string, value: unknown) {
+  if (!organizationId) {
+    throw new ForbiddenError('Organization context required for settings');
   }
   const result = await query(
     `INSERT INTO settings (organization_id, key, value)
@@ -36,18 +30,13 @@ export async function upsertSetting(
   return result.rows[0];
 }
 
-export async function deleteSetting(
-  organizationId: string | null,
-  key: string,
-  requesterOrgId: string | null,
-  isSuperAdmin: boolean,
-) {
-  if (organizationId && !isSuperAdmin && requesterOrgId !== organizationId) {
-    throw new ForbiddenError('Cannot delete settings for another organization');
+export async function deleteSetting(organizationId: string, key: string) {
+  if (!organizationId) {
+    throw new ForbiddenError('Organization context required for settings');
   }
-  await query(`DELETE FROM settings WHERE organization_id IS NOT DISTINCT FROM $1 AND key = $2`, [
-    organizationId,
-    key,
-  ]);
-  return { message: 'Setting deleted' };
+  const result = await query(
+    `DELETE FROM settings WHERE organization_id = $1 AND key = $2 RETURNING id`,
+    [organizationId, key],
+  );
+  return { message: 'Setting deleted', deleted: Boolean(result.rows[0]) };
 }

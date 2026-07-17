@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
-import { authenticate, requirePermission, requireRoles } from '../middleware/auth.js';
+import { authenticate, requirePermission, requireRoles, forbidSuperAdmin } from '../middleware/auth.js';
 import {
   paginationSchema,
   uuidParamSchema,
@@ -10,6 +10,7 @@ import {
   createAcademicSessionSchema,
   updateAcademicSessionSchema,
   createAdminUserSchema,
+  updateAdminUserSchema,
   assignRoleSchema,
   updateUserStatusSchema,
   createNotificationSchema,
@@ -116,6 +117,25 @@ router.post(
   requireRoles('org_admin', 'super_admin'),
   platformController.createUser,
 );
+router.get(
+  '/users/:userId',
+  validate(userIdParamSchema, 'params'),
+  requireRoles('org_admin', 'super_admin'),
+  platformController.getUser,
+);
+router.patch(
+  '/users/:userId',
+  validate(userIdParamSchema, 'params'),
+  validate(updateAdminUserSchema),
+  requireRoles('org_admin', 'super_admin'),
+  platformController.updateUser,
+);
+router.delete(
+  '/users/:userId',
+  validate(userIdParamSchema, 'params'),
+  requireRoles('org_admin', 'super_admin'),
+  platformController.deleteUser,
+);
 router.post(
   '/users/:userId/roles',
   validate(userIdParamSchema, 'params'),
@@ -155,35 +175,44 @@ router.get('/payments', validate(paginationSchema, 'query'), platformController.
 router.get('/payments/wallet', platformController.getWallet);
 router.post(
   '/payments/create-order',
+  forbidSuperAdmin('Super Admin cannot create payments'),
   validate(createRazorpayOrderSchema),
   platformController.createRazorpayOrder,
 );
 router.post(
   '/payments/verify',
+  forbidSuperAdmin('Super Admin cannot verify payments'),
   validate(verifyRazorpayPaymentSchema),
   platformController.verifyRazorpayPayment,
 );
 router.post(
   '/payments',
+  forbidSuperAdmin('Super Admin cannot create payments'),
   validate(createPaymentSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin'),
   platformController.createPayment,
 );
 router.patch(
   '/payments/:id/status',
+  forbidSuperAdmin('Super Admin cannot update payment status'),
   validate(uuidParamSchema, 'params'),
   validate(updatePaymentStatusSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin'),
   platformController.updatePaymentStatus,
 );
 
 // Settings
-router.get('/settings', platformController.getSettings);
-router.put('/settings', validate(upsertSettingSchema), requireRoles('org_admin', 'super_admin'), platformController.upsertSetting);
+router.get('/settings', requirePermission('settings', 'read'), platformController.getSettings);
+router.put(
+  '/settings',
+  validate(upsertSettingSchema),
+  requirePermission('settings', 'update'),
+  platformController.upsertSetting,
+);
 router.delete(
   '/settings/:key',
   validate(keyParamSchema, 'params'),
-  requireRoles('org_admin', 'super_admin'),
+  requirePermission('settings', 'update'),
   platformController.deleteSetting,
 );
 
@@ -213,7 +242,8 @@ router.get(
 router.post(
   '/reports/tests/:testId/compute-ranks',
   validate(testIdParamSchema, 'params'),
-  requireRoles('org_admin', 'super_admin', 'teacher'),
+  forbidSuperAdmin('Super Admin cannot recompute ranks'),
+  requireRoles('org_admin', 'teacher'),
   platformController.computeRanks,
 );
 
