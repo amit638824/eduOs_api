@@ -38,13 +38,28 @@ export const createOrganizationSchema = z.object({
   logoUrl: z.string().url().optional(),
   theme: z.record(z.unknown()).optional(),
   settings: z.record(z.unknown()).optional(),
-  /** Notify this email when superadmin acts on the org */
-  contactEmail: z.string().email().optional(),
+  /** Org admin login email — required so credentials can be mailed */
+  contactEmail: z.string().email(),
+  adminFirstName: z.string().min(1).max(100).trim().optional(),
+  adminLastName: z.string().min(1).max(100).trim().optional(),
+  /** Optional; auto-generated if omitted */
+  adminPassword: passwordSchema.optional(),
   /** When true, org is immediately active; default pending for approval */
   isActive: z.boolean().optional(),
 });
 
-export const updateOrganizationSchema = createOrganizationSchema.partial().extend({
+export const updateOrganizationSchema = z.object({
+  name: z.string().min(2).max(255).trim().optional(),
+  slug: z
+    .string()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase alphanumeric with hyphens')
+    .optional(),
+  logoUrl: z.string().url().optional(),
+  theme: z.record(z.unknown()).optional(),
+  settings: z.record(z.unknown()).optional(),
+  contactEmail: z.string().email().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -61,7 +76,7 @@ export const updateBranchSchema = createBranchSchema.partial().extend({
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(200).default(20),
 });
 
 export const uuidParamSchema = z.object({

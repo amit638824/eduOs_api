@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { vQuery, vParams } from '../middleware/validate.js';
 import { ForbiddenError } from '../utils/errors.js';
 import * as orgService from '../services/organization.service.js';
-import { notifyOrganizationOfSuperAdminAction } from '../services/email.service.js';
+import { notifyOrganizationOfSuperAdminAction, sendOrganizationCredentialsEmail } from '../services/email.service.js';
 
 function assertCanAccessOrg(req: Request, targetOrgId: string) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
@@ -31,23 +31,43 @@ export async function createOrganization(
 ): Promise<void> {
   try {
     const org = await orgService.createOrganization(req.body);
-    const contactEmail =
-      typeof req.body.contactEmail === 'string' ? req.body.contactEmail : undefined;
+    const admin = org.admin;
 
-    if (req.user!.roles.includes('super_admin')) {
+    if (admin) {
+      void sendOrganizationCredentialsEmail({
+        to: admin.email,
+        orgName: org.name,
+        adminName: `${admin.firstName} ${admin.lastName}`.trim(),
+        loginEmail: admin.email,
+        temporaryPassword: admin.temporaryPassword,
+        isApproved: Boolean(org.is_active),
+      }).catch((err) => console.error('[email] org credentials failed:', err));
+    } else if (req.user!.roles.includes('super_admin')) {
       fireOrgMail({
-        organizationId: org.id as string,
-        orgName: org.name as string,
+        organizationId: org.id,
+        orgName: org.name,
         action: org.is_active ? 'approved' : 'created',
         message: org.is_active
-          ? 'Your organization has been created and approved on the platform. You can log in and start managing departments, faculty and exams.'
-          : 'Your organization has been registered and is pending Super Admin approval. You will receive another email once access is approved.',
+          ? 'Your organization has been created and approved on the platform.'
+          : 'Your organization has been registered and is pending Super Admin approval.',
         actorName: actorName(req),
-        extraEmails: contactEmail ? [contactEmail] : undefined,
       });
     }
 
-    res.status(201).json({ success: true, data: org });
+    // Never return raw password in API response for security — only emailed
+    const { admin: _admin, ...safeOrg } = org;
+    res.status(201).json({
+      success: true,
+      data: {
+        ...safeOrg,
+        adminCreated: Boolean(admin),
+        adminEmail: admin?.email ?? null,
+        credentialsEmailed: Boolean(admin),
+      },
+      message: admin
+        ? `Organization created. Login details emailed to ${admin.email}.`
+        : 'Organization created.',
+    });
   } catch (error) {
     next(error);
   }

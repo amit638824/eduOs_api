@@ -1,10 +1,9 @@
 import { env } from '../config/env.js';
 
-const LOGO_URL =
-  env.LOGO_URL ||
-  `${env.FRONTEND_URL.replace(/\/$/, '')}/img/logo/sca-logo.png`;
+const LOGO_URL = env.LOGO_URL;
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
-const RESET_PASSWORD_PNG = env.RESET_PASSWORD_PNG || '';
+const CTA_DASHBOARD_PNG = env.EMAIL_CTA_DASHBOARD_PNG || '';
+const CTA_RESET_PNG = env.EMAIL_CTA_RESET_PNG || env.RESET_PASSWORD_PNG || '';
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -146,15 +145,31 @@ function ctaButton(href: string, label: string, bg = '#3b82f6'): string {
 </p>`;
 }
 
-function resetPasswordAction(hyperText: string): string {
-  if (RESET_PASSWORD_PNG) {
+/** Image CTA when available; falls back to styled text button */
+function ctaImageButton(
+  href: string,
+  label: string,
+  imageUrl: string,
+  opts?: { width?: number; height?: number; bg?: string },
+): string {
+  if (imageUrl) {
+    const width = opts?.width ?? 160;
+    const heightAttr = opts?.height ? ` height="${opts.height}"` : '';
     return `<p style="margin-bottom:10px;">
-  <a href="${hyperText}" style="display:inline-block">
-    <img width="160" height="41" alt="Reset Password" src="${RESET_PASSWORD_PNG}"/>
+  <a href="${href}" target="_blank" style="display:inline-block;text-decoration:none;border:0;outline:none;">
+    <img width="${width}"${heightAttr} alt="${escapeHtml(label)}" src="${imageUrl}" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;max-width:100%;height:auto;" />
   </a>
 </p>`;
   }
-  return ctaButton(hyperText, 'Reset Password');
+  return ctaButton(href, label, opts?.bg);
+}
+
+function dashboardCta(href: string, label = 'Go to Dashboard'): string {
+  return ctaImageButton(href, label, CTA_DASHBOARD_PNG, { width: 160, height: 41 });
+}
+
+function resetPasswordAction(hyperText: string): string {
+  return ctaImageButton(hyperText, 'Reset Password', CTA_RESET_PNG, { width: 160, height: 41 });
 }
 
 /** Forgot / reset password email */
@@ -284,7 +299,7 @@ export function adminPasswordResetMailTemplate({
         <p style="margin-bottom:10px;line-height:24px;color:#000;">
           For security reasons, please set a new password using the link below:
         </p>
-        ${ctaButton(resetLink, 'Set New Password')}
+        ${ctaImageButton(resetLink, 'Set New Password', CTA_RESET_PNG, { width: 160, height: 41 })}
         <p style="margin-bottom:10px;line-height:24px;color:#000;">
           This link will expire soon. If you did not expect this, contact support immediately.
         </p>
@@ -317,7 +332,7 @@ export function welcomeMailTemplate({
         <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
           Welcome to <strong>${escapeHtml(env.APP_NAME)}</strong>. Your account is ready.
         </p>
-        ${ctaButton(loginUrl, 'Login to Dashboard')}
+        ${dashboardCta(loginUrl, 'Login to Dashboard')}
         <p style="margin-bottom:10px;line-height:24px;color:#000;">
           You can take exams, view results, and manage your profile from the dashboard.
         </p>
@@ -417,6 +432,69 @@ export function documentRejectedMailTemplate({
   `);
 }
 
+/** Login credentials for newly created organization admin */
+export function organizationCredentialsMailTemplate({
+  orgName,
+  adminName,
+  loginEmail,
+  temporaryPassword,
+  isApproved,
+  loginUrl = `${UI_BASE_URL}/login`,
+}: {
+  orgName: string;
+  adminName?: string;
+  loginEmail: string;
+  temporaryPassword: string;
+  isApproved: boolean;
+  loginUrl?: string;
+}): string {
+  return wrapEmailBody(`
+    <tr>
+      <td style="padding:0;Margin:0;" align="left">
+        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(adminName || 'Organization Admin')},</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0;Margin:0;" align="left">
+        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
+          Your organization <strong>${escapeHtml(orgName)}</strong> has been added to
+          <strong>${escapeHtml(env.APP_NAME)}</strong>.
+        </p>
+        <p style="margin-bottom:10px;line-height:24px;color:#000;">
+          ${
+            isApproved
+              ? 'Your account is active. Use the credentials below to log in.'
+              : 'Your account is pending approval. After Super Admin approves, you can log in with these credentials.'
+          }
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin:12px 0 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:12px 16px;line-height:24px;color:#000;">
+              <strong>Login email:</strong><br/>
+              ${escapeHtml(loginEmail)}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+              <strong>Temporary password:</strong><br/>
+              <span style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:0.5px;">${escapeHtml(temporaryPassword)}</span>
+            </td>
+          </tr>
+        </table>
+        ${dashboardCta(loginUrl, 'Login to Dashboard')}
+        <p style="margin-bottom:10px;line-height:24px;color:#000;">
+          For security, please change your password after the first login.
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
+      </td>
+    </tr>
+  `);
+}
+
 export type OrganizationActionType =
   | 'created'
   | 'approved'
@@ -450,6 +528,8 @@ export function organizationActionMailTemplate({
       ? 'Go to Dashboard'
       : 'Contact Support';
   const ctaColor = action === 'deleted' || action === 'deactivated' ? '#d9534f' : '#3b82f6';
+  const useDashboardImage =
+    action === 'approved' || action === 'created' || action === 'updated';
 
   return wrapEmailBody(`
     <tr>
@@ -473,7 +553,72 @@ export function organizationActionMailTemplate({
         </p>`
             : ''
         }
-        ${action !== 'deleted' ? ctaButton(actionUrl, ctaLabel, ctaColor) : ''}
+        ${
+          action !== 'deleted'
+            ? useDashboardImage
+              ? dashboardCta(actionUrl, ctaLabel)
+              : ctaButton(actionUrl, ctaLabel, ctaColor)
+            : ''
+        }
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
+      </td>
+    </tr>
+  `);
+}
+
+/** Credentials email when faculty / student / org user is created by admin */
+export function userCredentialsMailTemplate({
+  firstName,
+  roleLabel,
+  loginEmail,
+  temporaryPassword,
+  loginUrl = `${UI_BASE_URL}/login`,
+  orgName,
+}: {
+  firstName: string;
+  roleLabel: string;
+  loginEmail: string;
+  temporaryPassword: string;
+  loginUrl?: string;
+  orgName?: string;
+}): string {
+  return wrapEmailBody(`
+    <tr>
+      <td style="padding:0;Margin:0;" align="left">
+        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(firstName)},</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0;Margin:0;" align="left">
+        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
+          Your <strong>${escapeHtml(roleLabel)}</strong> account has been created on
+          <strong>${escapeHtml(env.APP_NAME)}</strong>${
+            orgName ? ` for <strong>${escapeHtml(orgName)}</strong>` : ''
+          }.
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin:12px 0 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:12px 16px;line-height:24px;color:#000;">
+              <strong>Login email:</strong><br/>
+              ${escapeHtml(loginEmail)}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+              <strong>Password:</strong><br/>
+              <span style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:0.5px;">${escapeHtml(temporaryPassword)}</span>
+            </td>
+          </tr>
+        </table>
+        ${dashboardCta(loginUrl, 'Go to Dashboard')}
+        <p style="margin-bottom:10px;line-height:24px;color:#000;">
+          For security, please change your password after the first login.
+          If you forget it later, use <strong>Forgot Password</strong> on the login page.
+        </p>
       </td>
     </tr>
     <tr>

@@ -57,6 +57,12 @@ export function generateSecureToken(bytes = 32): string {
   return crypto.randomBytes(bytes).toString('hex');
 }
 
+/** Temp password that satisfies app password policy */
+export function generateTempPassword(): string {
+  const chunk = crypto.randomBytes(4).toString('hex');
+  return `Edu@${chunk}A1`;
+}
+
 export function sanitizeUser<T extends Record<string, unknown>>(user: T): Omit<T, 'password_hash'> {
   const { password_hash: _, ...safe } = user as T & { password_hash?: string };
   return safe;

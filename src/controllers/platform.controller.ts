@@ -9,6 +9,7 @@ import * as settingsService from '../services/settings.service.js';
 import * as auditService from '../services/audit.service.js';
 import * as reportService from '../services/report.service.js';
 import * as orgService from '../services/organization.service.js';
+import { sendUserCredentialsEmail } from '../services/email.service.js';
 import { requireOrgId, resolveOrganizationId } from '../utils/orgAccess.js';
 
 async function orgContext(req: Request) {
@@ -145,7 +146,25 @@ export async function createUser(req: Request, res: Response, next: NextFunction
   try {
     const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
     const user = await adminUserService.createUser(orgId, req.body, requesterOrgId, isSuperAdmin);
-    res.status(201).json({ success: true, data: user });
+
+    let orgName: string | undefined;
+    try {
+      const org = await orgService.getOrganizationById(orgId);
+      orgName = String((org as { name?: string }).name ?? '');
+    } catch {
+      /* ignore — email still useful without org name */
+    }
+
+    void sendUserCredentialsEmail({
+      to: req.body.email,
+      firstName: req.body.firstName,
+      role: req.body.role,
+      loginEmail: req.body.email,
+      temporaryPassword: req.body.password,
+      orgName,
+    }).catch((err) => console.error('[email] user credentials failed:', err));
+
+    res.status(201).json({ success: true, data: user, meta: { credentialsEmailed: true } });
   } catch (e) {
     next(e);
   }

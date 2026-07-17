@@ -18,6 +18,11 @@ export async function requestPasswordReset(email: string) {
   const rawToken = generateSecureToken(32);
   const tokenHash = hashToken(rawToken);
   await query(
+    `UPDATE password_reset_tokens SET used_at = NOW()
+     WHERE user_id = $1 AND used_at IS NULL`,
+    [user.rows[0].id],
+  );
+  await query(
     `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
      VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
     [user.rows[0].id, tokenHash],
@@ -53,7 +58,16 @@ export async function resetPassword(token: string, newPassword: string) {
     row.rows[0].user_id,
     passwordHash,
   ]);
-  await query(`UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1`, [tokenHash]);
+  await query(
+    `UPDATE password_reset_tokens SET used_at = NOW()
+     WHERE user_id = $1 AND used_at IS NULL`,
+    [row.rows[0].user_id],
+  );
+  await query(
+    `UPDATE refresh_tokens SET revoked_at = NOW()
+     WHERE user_id = $1 AND revoked_at IS NULL`,
+    [row.rows[0].user_id],
+  );
   await logAudit({
     userId: row.rows[0].user_id,
     action: 'reset',

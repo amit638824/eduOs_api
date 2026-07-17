@@ -1,6 +1,7 @@
-import { query } from '../config/database.js';
+import { query, withTransaction } from '../config/database.js';
 import { ConflictError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import { generateTempPassword, hashPassword } from '../utils/security.js';
 
 export interface CreateOrganizationInput {
   name: string;
@@ -8,11 +9,35 @@ export interface CreateOrganizationInput {
   logoUrl?: string;
   theme?: Record<string, unknown>;
   settings?: Record<string, unknown>;
-  contactEmail?: string;
+  contactEmail: string;
+  adminFirstName?: string;
+  adminLastName?: string;
+  adminPassword?: string;
   isActive?: boolean;
 }
 
-export async function createOrganization(input: CreateOrganizationInput) {
+export interface CreateOrganizationResult {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  theme: unknown;
+  settings: unknown;
+  is_active: boolean;
+  created_at: string;
+  admin?: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    temporaryPassword: string;
+    status: string;
+  };
+}
+
+export async function createOrganization(
+  input: CreateOrganizationInput,
+): Promise<CreateOrganizationResult> {
   const existing = await query(
     'SELECT id FROM organizations WHERE slug = $1 AND deleted_at IS NULL',
     [input.slug],
@@ -21,39 +46,84 @@ export async function createOrganization(input: CreateOrganizationInput) {
     throw new ConflictError('Organization slug already exists');
   }
 
+  const contactEmail = input.contactEmail.toLowerCase().trim();
+  const emailTaken = await query('SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL', [
+    contactEmail,
+  ]);
+  if (emailTaken.rowCount) {
+    throw new ConflictError('Contact email is already registered as a user');
+  }
+
   const isActive = input.isActive === true;
-  const settings = {
-    verificationStatus: isActive ? 'verified' : 'pending',
-    ...(input.settings ?? {}),
-    ...(input.contactEmail
-      ? { contactEmail: input.contactEmail.toLowerCase().trim() }
-      : {}),
-  };
+  const temporaryPassword = input.adminPassword?.trim() || generateTempPassword();
+  const firstName = (input.adminFirstName?.trim() || 'Organization').slice(0, 100);
+  const lastName = (input.adminLastName?.trim() || 'Admin').slice(0, 100);
+  const userStatus = isActive ? 'active' : 'pending';
+  const passwordHash = await hashPassword(temporaryPassword);
 
-  const result = await query(
-    `INSERT INTO organizations (name, slug, logo_url, theme, settings, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, name, slug, logo_url, theme, settings, is_active, created_at`,
-    [
-      input.name,
-      input.slug,
-      input.logoUrl ?? null,
-      JSON.stringify(input.theme ?? {}),
-      JSON.stringify(settings),
-      isActive,
-    ],
-  );
+  return withTransaction(async (client) => {
+    const settings = {
+      verificationStatus: isActive ? 'verified' : 'pending',
+      ...(input.settings ?? {}),
+      contactEmail,
+    };
 
-  const org = result.rows[0];
+    const orgResult = await client.query(
+      `INSERT INTO organizations (name, slug, logo_url, theme, settings, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, slug, logo_url, theme, settings, is_active, created_at`,
+      [
+        input.name,
+        input.slug,
+        input.logoUrl ?? null,
+        JSON.stringify(input.theme ?? {}),
+        JSON.stringify(settings),
+        isActive,
+      ],
+    );
+    const org = orgResult.rows[0];
 
-  // Default main branch so departments can be added immediately after approve
-  await query(
-    `INSERT INTO branches (organization_id, name, code, address)
-     VALUES ($1, $2, $3, $4)`,
-    [org.id, 'Main Campus', 'MAIN', null],
-  );
+    const branch = await client.query(
+      `INSERT INTO branches (organization_id, name, code, address)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [org.id, 'Main Campus', 'MAIN', null],
+    );
 
-  return org;
+    const user = await client.query(
+      `INSERT INTO users (email, password_hash, first_name, last_name, organization_id, branch_id, status, email_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+       RETURNING id, email, first_name, last_name, status`,
+      [
+        contactEmail,
+        passwordHash,
+        firstName,
+        lastName,
+        org.id,
+        branch.rows[0].id,
+        userStatus,
+      ],
+    );
+
+    const role = await client.query(`SELECT id FROM roles WHERE name = 'org_admin'`);
+    if (!role.rows[0]) throw new NotFoundError('Role');
+    await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, [
+      user.rows[0].id,
+      role.rows[0].id,
+    ]);
+
+    return {
+      ...org,
+      admin: {
+        id: user.rows[0].id as string,
+        email: user.rows[0].email as string,
+        firstName: user.rows[0].first_name as string,
+        lastName: user.rows[0].last_name as string,
+        temporaryPassword,
+        status: user.rows[0].status as string,
+      },
+    };
+  });
 }
 
 export async function listOrganizations(page: number, limit: number): Promise<PaginatedResult<unknown>> {

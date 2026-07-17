@@ -37,8 +37,16 @@ const PRODUCTION_CORS_ORIGINS = [
 ] as const;
 const LOCAL_CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';
 const DEFAULT_CORS_ORIGINS = [...PRODUCTION_CORS_ORIGINS, LOCAL_CORS_ORIGINS].join(',');
-const DEFAULT_FRONTEND_URL =
-  NODE_ENV === 'production' ? PRODUCTION_FRONTEND_URL : 'http://localhost:5173';
+
+const FRONTEND_URL_LOCAL = str('FRONTEND_URL_LOCAL', 'http://localhost:5173').replace(/\/$/, '');
+const FRONTEND_URL_PROD = str('FRONTEND_URL_PROD', PRODUCTION_FRONTEND_URL).replace(/\/$/, '');
+const FRONTEND_URL = str(
+  'FRONTEND_URL',
+  NODE_ENV === 'production' ? FRONTEND_URL_PROD : FRONTEND_URL_LOCAL,
+).replace(/\/$/, '');
+
+/** Absolute asset URLs for email clients (cannot load localhost images) */
+const EMAIL_ASSET_BASE = str('EMAIL_ASSET_BASE', FRONTEND_URL_PROD).replace(/\/$/, '');
 
 /** Dev-only JWT fallbacks — never use in production without real secrets */
 const DEV_JWT_ACCESS =
@@ -76,9 +84,25 @@ export const env = {
   APP_NAME: str('APP_NAME', 'Super Computer Academy'),
   TRUST_PROXY: num('TRUST_PROXY', 1),
 
-  FRONTEND_URL: str('FRONTEND_URL', DEFAULT_FRONTEND_URL),
-  LOGO_URL: str('LOGO_URL'),
-  RESET_PASSWORD_PNG: str('RESET_PASSWORD_PNG'),
+  /** Used in email links (login, reset password, dashboard) */
+  FRONTEND_URL,
+  FRONTEND_URL_LOCAL,
+  FRONTEND_URL_PROD,
+  EMAIL_ASSET_BASE,
+  LOGO_URL: str('LOGO_URL', `${EMAIL_ASSET_BASE}/img/logo/sca-logo.png`),
+  EMAIL_CTA_DASHBOARD_PNG: str(
+    'EMAIL_CTA_DASHBOARD_PNG',
+    `${EMAIL_ASSET_BASE}/img/email/go-to-dashboard.png`,
+  ),
+  EMAIL_CTA_RESET_PNG: str(
+    'EMAIL_CTA_RESET_PNG',
+    `${EMAIL_ASSET_BASE}/img/email/reset-password.png`,
+  ),
+  /** @deprecated use EMAIL_CTA_RESET_PNG — kept for older .env files */
+  RESET_PASSWORD_PNG: str(
+    'RESET_PASSWORD_PNG',
+    `${EMAIL_ASSET_BASE}/img/email/reset-password.png`,
+  ),
 
   SMTP_HOST: str('SMTP_HOST'),
   SMTP_PORT: num('SMTP_PORT', 587),
@@ -91,6 +115,13 @@ export const env = {
   RAZORPAY_KEY_SECRET: str('RAZORPAY_KEY_SECRET'),
 } as const;
 
+/** Build an absolute frontend URL (strips duplicate slashes). */
+export function frontendUrl(path = ''): string {
+  const base = env.FRONTEND_URL.replace(/\/$/, '');
+  if (!path) return base;
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 function warnMissing(keys: string[], level: 'warn' | 'error' = 'warn') {
   const missing = keys.filter((k) => !process.env[k]?.trim());
   if (missing.length === 0) return;
@@ -101,9 +132,15 @@ function warnMissing(keys: string[], level: 'warn' | 'error' = 'warn') {
 
 if (NODE_ENV === 'production') {
   warnMissing(['DB_HOST', 'DB_PASSWORD', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'], 'error');
+  if (/localhost|127\.0\.0\.1/i.test(env.FRONTEND_URL)) {
+    console.error(
+      `[env] FRONTEND_URL is "${env.FRONTEND_URL}" in production — set FRONTEND_URL or FRONTEND_URL_PROD to ${FRONTEND_URL_PROD}`,
+    );
+  }
 } else {
   warnMissing(['DB_PASSWORD', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']);
 }
+
 
 export const isProduction = env.NODE_ENV === 'production';
 

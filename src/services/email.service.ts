@@ -1,16 +1,18 @@
-import nodemailer from 'nodemailer';
-import { env, bccEmails, isSmtpConfigured } from '../config/env.js';
 import {
   adminPasswordResetMailTemplate,
   contactFormMailTemplate,
   emailVerificationOtpMailTemplate,
   forgetPasswordMailTemplate,
   organizationActionMailTemplate,
+  organizationCredentialsMailTemplate,
   paymentConfirmationMailTemplate,
+  userCredentialsMailTemplate,
   welcomeMailTemplate,
   type OrganizationActionType,
 } from '../templates/emailTemplates.js';
 import * as orgService from './organization.service.js';
+import { env, bccEmails, isSmtpConfigured, frontendUrl } from '../config/env.js';
+import nodemailer from 'nodemailer';
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -60,7 +62,7 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
 }
 
 export async function sendPasswordResetEmail(email: string, resetToken: string): Promise<boolean> {
-  const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
+  const resetUrl = frontendUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
   return sendEmail({
     to: email,
     subject: `${env.APP_NAME} — Reset your password`,
@@ -74,7 +76,7 @@ export async function sendAdminPasswordResetEmail(
   userName: string,
   resetToken: string,
 ): Promise<boolean> {
-  const resetLink = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
+  const resetLink = frontendUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
   return sendEmail({
     to: email,
     subject: `${env.APP_NAME} — Set a new password`,
@@ -107,11 +109,44 @@ export async function sendPaymentConfirmationEmail(
 }
 
 export async function sendWelcomeEmail(email: string, firstName: string): Promise<boolean> {
+  const loginUrl = frontendUrl('/login');
   return sendEmail({
     to: email,
     subject: `Welcome to ${env.APP_NAME}`,
-    html: welcomeMailTemplate({ firstName }),
-    text: `Welcome to ${env.APP_NAME}. Login at ${env.FRONTEND_URL}/login`,
+    html: welcomeMailTemplate({ firstName, loginUrl }),
+    text: `Welcome to ${env.APP_NAME}. Login at ${loginUrl}`,
+  });
+}
+
+/** Faculty / student / org user credentials after admin creates the account */
+export async function sendUserCredentialsEmail(input: {
+  to: string;
+  firstName: string;
+  role: 'student' | 'teacher' | 'org_admin';
+  loginEmail: string;
+  temporaryPassword: string;
+  orgName?: string;
+}): Promise<boolean> {
+  const roleLabel =
+    input.role === 'teacher' ? 'Faculty' : input.role === 'student' ? 'Student' : 'Organization Admin';
+  const loginUrl = frontendUrl('/login');
+  return sendEmail({
+    to: input.to,
+    subject: `${env.APP_NAME} — Your ${roleLabel.toLowerCase()} account`,
+    html: userCredentialsMailTemplate({
+      firstName: input.firstName,
+      roleLabel,
+      loginEmail: input.loginEmail,
+      temporaryPassword: input.temporaryPassword,
+      loginUrl,
+      orgName: input.orgName,
+    }),
+    text: [
+      `Your ${roleLabel} account is ready.`,
+      `Login email: ${input.loginEmail}`,
+      `Password: ${input.temporaryPassword}`,
+      `Login: ${loginUrl}`,
+    ].join('\n'),
   });
 }
 
@@ -172,7 +207,41 @@ export async function notifyOrganizationOfSuperAdminAction(input: {
       action: input.action,
       message: input.message,
       actorName: input.actorName,
+      actionUrl: frontendUrl('/login'),
     }),
     text: `${ORG_ACTION_SUBJECT[input.action]}: ${input.orgName}\n\n${input.message}`,
+  });
+}
+
+/** Send login email + temporary password when a new organization is created */
+export async function sendOrganizationCredentialsEmail(input: {
+  to: string;
+  orgName: string;
+  adminName?: string;
+  loginEmail: string;
+  temporaryPassword: string;
+  isApproved: boolean;
+}): Promise<boolean> {
+  const loginUrl = frontendUrl('/login');
+  return sendEmail({
+    to: input.to,
+    subject: `${env.APP_NAME} — Your organization login details`,
+    html: organizationCredentialsMailTemplate({
+      orgName: input.orgName,
+      adminName: input.adminName,
+      loginEmail: input.loginEmail,
+      temporaryPassword: input.temporaryPassword,
+      isApproved: input.isApproved,
+      loginUrl,
+    }),
+    text: [
+      `Organization: ${input.orgName}`,
+      `Login email: ${input.loginEmail}`,
+      `Temporary password: ${input.temporaryPassword}`,
+      `Login: ${loginUrl}`,
+      input.isApproved
+        ? 'Your account is active.'
+        : 'Pending Super Admin approval before login.',
+    ].join('\n'),
   });
 }
