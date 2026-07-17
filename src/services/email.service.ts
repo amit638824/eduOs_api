@@ -1,6 +1,7 @@
 import {
   adminPasswordResetMailTemplate,
   contactFormMailTemplate,
+  EMAIL_CID,
   emailVerificationOtpMailTemplate,
   forgetPasswordMailTemplate,
   organizationActionMailTemplate,
@@ -13,6 +14,24 @@ import {
 import * as orgService from './organization.service.js';
 import { env, bccEmails, isSmtpConfigured, frontendUrl } from '../config/env.js';
 import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+
+/** Bundled PNGs (same files live on frontend public/img/email after UI deploy) */
+function resolveEmailAssetsDir(): string {
+  const candidates = [
+    path.join(process.cwd(), 'src', 'assets', 'email'),
+    path.join(process.cwd(), 'dist', 'assets', 'email'),
+    path.join(process.cwd(), 'assets', 'email'),
+    path.join(__dirname, '..', 'assets', 'email'),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'go-to-dashboard.png'))) return dir;
+  }
+  return candidates[0];
+}
+
+const EMAIL_ASSETS_DIR = resolveEmailAssetsDir();
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -31,6 +50,33 @@ function getTransporter(): nodemailer.Transporter | null {
     });
   }
   return transporter;
+}
+
+function inlinePng(
+  filename: string,
+  cid: string,
+): { filename: string; path: string; cid: string; contentType: string; contentDisposition: 'inline' } | null {
+  const filePath = path.join(EMAIL_ASSETS_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    console.warn(`[email] Missing asset: ${filePath}`);
+    return null;
+  }
+  return {
+    filename,
+    path: filePath,
+    cid,
+    contentType: 'image/png',
+    contentDisposition: 'inline',
+  };
+}
+
+/** Always attach logo + CTA button PNGs so Gmail does not depend on SPA image routes */
+function emailInlineAttachments() {
+  return [
+    inlinePng('sca-logo.png', EMAIL_CID.logo),
+    inlinePng('go-to-dashboard.png', EMAIL_CID.dashboardCta),
+    inlinePng('reset-password.png', EMAIL_CID.resetCta),
+  ].filter((a): a is NonNullable<typeof a> => a != null);
 }
 
 export interface SendEmailInput {
@@ -56,6 +102,7 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
     subject: input.subject,
     html: input.html,
     text: input.text,
+    attachments: emailInlineAttachments(),
   });
 
   return true;

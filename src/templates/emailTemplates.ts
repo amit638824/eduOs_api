@@ -1,9 +1,17 @@
 import { env } from '../config/env.js';
 
-const LOGO_URL = env.LOGO_URL;
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
-const CTA_DASHBOARD_PNG = env.EMAIL_CTA_DASHBOARD_PNG || '';
-const CTA_RESET_PNG = env.EMAIL_CTA_RESET_PNG || env.RESET_PASSWORD_PNG || '';
+/** Inline CID — email clients load these from attachments (not remote SPA URLs) */
+export const EMAIL_CID = {
+  logo: 'sca-logo@edutech',
+  dashboardCta: 'cta-dashboard@edutech',
+  resetCta: 'cta-reset@edutech',
+} as const;
+/** Public live URLs (frontend /public) — keep in sync for browser checks after deploy */
+const CTA_DASHBOARD_LIVE =
+  env.EMAIL_CTA_DASHBOARD_PNG || `${env.EMAIL_ASSET_BASE}/img/email/go-to-dashboard.png`;
+const CTA_RESET_LIVE =
+  env.EMAIL_CTA_RESET_PNG || env.RESET_PASSWORD_PNG || `${env.EMAIL_ASSET_BASE}/img/email/reset-password.png`;
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -74,7 +82,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
                                       <tr>
                                         <td style="padding:0;" align="left">
                                           <a href="${UI_BASE_URL}" target="_blank" style="display:inline-block;">
-                                            <img width="180" class="adapt-img" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" alt="${escapeHtml(env.APP_NAME)}" src="${LOGO_URL}">
+                                            <img width="180" class="adapt-img" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" alt="${escapeHtml(env.APP_NAME)}" src="cid:${EMAIL_CID.logo}">
                                           </a>
                                         </td>
                                       </tr>
@@ -145,19 +153,22 @@ function ctaButton(href: string, label: string, bg = '#3b82f6'): string {
 </p>`;
 }
 
-/** Image CTA when available; falls back to styled text button */
+/** Image CTA — prefer CID (reliable in Gmail); live URL kept as fallback href host context */
 function ctaImageButton(
   href: string,
   label: string,
-  imageUrl: string,
+  cid: string,
+  liveUrl: string,
   opts?: { width?: number; height?: number; bg?: string },
 ): string {
-  if (imageUrl) {
-    const width = opts?.width ?? 160;
-    const heightAttr = opts?.height ? ` height="${opts.height}"` : '';
-    return `<p style="margin-bottom:10px;">
+  const width = opts?.width ?? 160;
+  const heightAttr = opts?.height ? ` height="${opts.height}"` : '';
+  // CID first so the PNG ships with the email (SPA hosts often return HTML for missing /img/* paths)
+  const src = cid ? `cid:${cid}` : liveUrl;
+  if (src) {
+    return `<p style="margin:16px 0 10px 0;">
   <a href="${href}" target="_blank" style="display:inline-block;text-decoration:none;border:0;outline:none;">
-    <img width="${width}"${heightAttr} alt="${escapeHtml(label)}" src="${imageUrl}" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;max-width:100%;height:auto;" />
+    <img width="${width}"${heightAttr} alt="${escapeHtml(label)}" src="${src}" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;max-width:100%;height:auto;" />
   </a>
 </p>`;
   }
@@ -165,11 +176,17 @@ function ctaImageButton(
 }
 
 function dashboardCta(href: string, label = 'Go to Dashboard'): string {
-  return ctaImageButton(href, label, CTA_DASHBOARD_PNG, { width: 160, height: 41 });
+  return ctaImageButton(href, label, EMAIL_CID.dashboardCta, CTA_DASHBOARD_LIVE, {
+    width: 160,
+    height: 41,
+  });
 }
 
 function resetPasswordAction(hyperText: string): string {
-  return ctaImageButton(hyperText, 'Reset Password', CTA_RESET_PNG, { width: 160, height: 41 });
+  return ctaImageButton(hyperText, 'Reset Password', EMAIL_CID.resetCta, CTA_RESET_LIVE, {
+    width: 160,
+    height: 41,
+  });
 }
 
 /** Forgot / reset password email */
@@ -299,7 +316,7 @@ export function adminPasswordResetMailTemplate({
         <p style="margin-bottom:10px;line-height:24px;color:#000;">
           For security reasons, please set a new password using the link below:
         </p>
-        ${ctaImageButton(resetLink, 'Set New Password', CTA_RESET_PNG, { width: 160, height: 41 })}
+        ${ctaImageButton(resetLink, 'Set New Password', EMAIL_CID.resetCta, CTA_RESET_LIVE, { width: 160, height: 41 })}
         <p style="margin-bottom:10px;line-height:24px;color:#000;">
           This link will expire soon. If you did not expect this, contact support immediately.
         </p>
