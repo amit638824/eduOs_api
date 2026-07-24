@@ -20,7 +20,8 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().email().transform((v) => v.toLowerCase()),
+  /** Email address or student enrollment number */
+  email: z.string().min(1).max(255).trim(),
   password: z.string().min(1).max(128),
 });
 
@@ -266,14 +267,8 @@ export const createAdminUserSchema = z.object({
   phone: z.string().max(20).optional(),
   role: z.enum(['student', 'teacher', 'org_admin']),
   branchId: z.string().uuid().optional(),
-});
-
-export const assignRoleSchema = z.object({
-  role: z.enum(['student', 'teacher', 'org_admin']),
-});
-
-export const updateUserStatusSchema = z.object({
-  status: z.enum(['active', 'inactive', 'suspended']),
+  /** Student enrollment / admission number — auto-generated if omitted */
+  enrollmentNo: z.string().min(2).max(50).trim().optional(),
 });
 
 export const updateAdminUserSchema = z.object({
@@ -282,6 +277,15 @@ export const updateAdminUserSchema = z.object({
   phone: z.string().max(20).optional(),
   branchId: z.string().uuid().nullable().optional(),
   role: z.enum(['student', 'teacher', 'org_admin']).optional(),
+  enrollmentNo: z.string().min(2).max(50).trim().optional(),
+});
+
+export const assignRoleSchema = z.object({
+  role: z.enum(['student', 'teacher', 'org_admin']),
+});
+
+export const updateUserStatusSchema = z.object({
+  status: z.enum(['active', 'inactive', 'suspended']),
 });
 
 export const createNotificationSchema = z.object({

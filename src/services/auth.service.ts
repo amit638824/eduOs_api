@@ -186,16 +186,27 @@ export async function registerUser(
 }
 
 export async function loginUser(
-  email: string,
+  loginId: string,
   password: string,
   deviceInfo: Record<string, unknown>,
   ipAddress?: string,
 ) {
-  const result = await query<DbUser & { mfa_enabled: boolean }>(
-    `SELECT id, email, password_hash, first_name, last_name, organization_id, status, mfa_enabled
-     FROM users WHERE email = $1 AND deleted_at IS NULL`,
-    [email],
-  );
+  const trimmed = loginId.trim();
+  const isEmail = trimmed.includes('@');
+
+  const result = isEmail
+    ? await query<DbUser & { mfa_enabled: boolean }>(
+        `SELECT id, email, password_hash, first_name, last_name, organization_id, status, mfa_enabled
+         FROM users WHERE email = $1 AND deleted_at IS NULL`,
+        [trimmed.toLowerCase()],
+      )
+    : await query<DbUser & { mfa_enabled: boolean }>(
+        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.organization_id, u.status, u.mfa_enabled
+         FROM users u
+         JOIN students s ON s.user_id = u.id
+         WHERE LOWER(s.admission_no) = LOWER($1) AND u.deleted_at IS NULL`,
+        [trimmed],
+      );
 
   const user = result.rows[0];
   if (!user) {

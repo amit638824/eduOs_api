@@ -145,11 +145,22 @@ export async function createUser(req: Request, res: Response, next: NextFunction
       firstName: req.body.firstName,
       role: req.body.role,
       loginEmail: req.body.email,
+      enrollmentNo: user.enrollment_no as string | null | undefined,
       temporaryPassword: req.body.password,
       orgName,
     }).catch((err) => console.error('[email] user credentials failed:', err));
 
     res.status(201).json({ success: true, data: user, meta: { credentialsEmailed: true } });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function previewEnrollmentNumber(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const data = await adminUserService.previewEnrollmentNumber(orgId);
+    res.json({ success: true, data });
   } catch (e) {
     next(e);
   }

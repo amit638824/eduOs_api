@@ -171,6 +171,7 @@ export async function sendUserCredentialsEmail(input: {
   firstName: string;
   role: 'student' | 'teacher' | 'org_admin';
   loginEmail: string;
+  enrollmentNo?: string | null;
   temporaryPassword: string;
   orgName?: string;
 }): Promise<boolean> {
@@ -184,6 +185,7 @@ export async function sendUserCredentialsEmail(input: {
       firstName: input.firstName,
       roleLabel,
       loginEmail: input.loginEmail,
+      enrollmentNo: input.enrollmentNo,
       temporaryPassword: input.temporaryPassword,
       loginUrl,
       orgName: input.orgName,
@@ -191,9 +193,12 @@ export async function sendUserCredentialsEmail(input: {
     text: [
       `Your ${roleLabel} account is ready.`,
       `Login email: ${input.loginEmail}`,
+      input.enrollmentNo ? `Enrollment no: ${input.enrollmentNo}` : null,
       `Password: ${input.temporaryPassword}`,
       `Login: ${loginUrl}`,
-    ].join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
   });
 }
 

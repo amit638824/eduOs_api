@@ -111,6 +111,11 @@ router.get(
   requireRoles('org_admin', 'super_admin'),
   platformController.listUsers,
 );
+router.get(
+  '/users/enrollment-number/preview',
+  requireRoles('org_admin', 'super_admin'),
+  platformController.previewEnrollmentNumber,
+);
 router.post(
   '/users',
   validate(createAdminUserSchema),

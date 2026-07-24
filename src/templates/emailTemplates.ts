@@ -592,6 +592,7 @@ export function userCredentialsMailTemplate({
   firstName,
   roleLabel,
   loginEmail,
+  enrollmentNo,
   temporaryPassword,
   loginUrl = `${UI_BASE_URL}/login`,
   orgName,
@@ -599,6 +600,7 @@ export function userCredentialsMailTemplate({
   firstName: string;
   roleLabel: string;
   loginEmail: string;
+  enrollmentNo?: string | null;
   temporaryPassword: string;
   loginUrl?: string;
   orgName?: string;
@@ -624,6 +626,16 @@ export function userCredentialsMailTemplate({
               ${escapeHtml(loginEmail)}
             </td>
           </tr>
+          ${
+            enrollmentNo
+              ? `<tr>
+            <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+              <strong>Enrollment no:</strong><br/>
+              <span style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:0.5px;">${escapeHtml(enrollmentNo)}</span>
+            </td>
+          </tr>`
+              : ''
+          }
           <tr>
             <td style="padding:0 16px 12px;line-height:24px;color:#000;">
               <strong>Password:</strong><br/>
@@ -633,6 +645,9 @@ export function userCredentialsMailTemplate({
         </table>
         ${dashboardCta(loginUrl, 'Go to Dashboard')}
         <p style="margin-bottom:10px;line-height:24px;color:#000;">
+          You can log in with your <strong>email</strong>${
+            enrollmentNo ? ' or <strong>enrollment number</strong>' : ''
+          } and the password above.
           For security, please change your password after the first login.
           If you forget it later, use <strong>Forgot Password</strong> on the login page.
         </p>

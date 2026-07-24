@@ -2,6 +2,7 @@ import { query, withTransaction } from '../config/database.js';
 import { hashPassword } from '../utils/security.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import { assertEnrollmentNoAvailable, resolveEnrollmentNo, suggestEnrollmentNo } from './enrollment.service.js';
 
 const ALLOWED_ASSIGN_ROLES = new Set(['student', 'teacher', 'org_admin']);
 
@@ -41,12 +42,14 @@ export async function listUsers(
   const [data, count] = await Promise.all([
     query(
       `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
+              st.admission_no AS enrollment_no,
               COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
        FROM users u
+       LEFT JOIN students st ON st.user_id = u.id
        LEFT JOIN user_roles ur ON ur.user_id = u.id
        LEFT JOIN roles r ON r.id = ur.role_id
        WHERE ${where}
-       GROUP BY u.id
+       GROUP BY u.id, st.admission_no
        ORDER BY u.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
@@ -62,16 +65,23 @@ export async function listUsers(
 export async function getUser(userId: string, organizationId: string) {
   const result = await query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
+            st.admission_no AS enrollment_no,
             COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
      FROM users u
+     LEFT JOIN students st ON st.user_id = u.id
      LEFT JOIN user_roles ur ON ur.user_id = u.id
      LEFT JOIN roles r ON r.id = ur.role_id
      WHERE u.id = $1 AND u.organization_id = $2 AND u.deleted_at IS NULL
-     GROUP BY u.id`,
+     GROUP BY u.id, st.admission_no`,
     [userId, organizationId],
   );
   if (!result.rows[0]) throw new NotFoundError('User');
   return result.rows[0];
+}
+
+export async function previewEnrollmentNumber(organizationId: string) {
+  const enrollmentNo = await suggestEnrollmentNo(organizationId);
+  return { enrollmentNo };
 }
 
 export async function createUser(
@@ -84,6 +94,7 @@ export async function createUser(
     phone?: string;
     role: 'student' | 'teacher' | 'org_admin';
     branchId?: string;
+    enrollmentNo?: string;
   },
 ) {
   await assertBranchInOrg(input.branchId, organizationId);
@@ -114,10 +125,17 @@ export async function createUser(
       user.rows[0].id,
       role.rows[0].id,
     ]);
+    let enrollmentNo: string | null = null;
     if (input.role === 'student') {
+      enrollmentNo = await resolveEnrollmentNo(
+        organizationId,
+        input.enrollmentNo,
+        (sql, params) => client.query(sql, params),
+      );
       await client.query(
-        `INSERT INTO students (user_id, organization_id, branch_id) VALUES ($1, $2, $3)`,
-        [user.rows[0].id, organizationId, input.branchId ?? null],
+        `INSERT INTO students (user_id, organization_id, branch_id, admission_no, enrolled_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [user.rows[0].id, organizationId, input.branchId ?? null, enrollmentNo],
       );
     }
     if (input.role === 'teacher') {
@@ -126,7 +144,7 @@ export async function createUser(
         [user.rows[0].id, organizationId, input.branchId ?? null],
       );
     }
-    return { ...user.rows[0], roles: [input.role] };
+    return { ...user.rows[0], roles: [input.role], enrollment_no: enrollmentNo };
   });
 }
 
@@ -139,6 +157,7 @@ export async function updateUser(
     phone?: string;
     branchId?: string | null;
     role?: 'student' | 'teacher' | 'org_admin';
+    enrollmentNo?: string;
   },
 ) {
   if (input.branchId) await assertBranchInOrg(input.branchId, organizationId);
@@ -204,7 +223,29 @@ export async function updateUser(
       }
     }
 
-    return result.rows[0];
+    if (input.enrollmentNo !== undefined) {
+      const studentRow = await client.query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
+      if (!studentRow.rows[0]) {
+        throw new ForbiddenError('Enrollment number can only be set for student accounts');
+      }
+      const admissionNo = await assertEnrollmentNoAvailable(
+        organizationId,
+        input.enrollmentNo,
+        userId,
+        (sql, params) => client.query(sql, params),
+      );
+      await client.query(
+        `UPDATE students SET admission_no = $2, updated_at = NOW() WHERE user_id = $1`,
+        [userId, admissionNo],
+      );
+    }
+
+    const enrollment = await client.query(
+      `SELECT admission_no AS enrollment_no FROM students WHERE user_id = $1`,
+      [userId],
+    );
+
+    return { ...result.rows[0], enrollment_no: enrollment.rows[0]?.enrollment_no ?? null };
   });
 }
 
