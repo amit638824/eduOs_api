@@ -374,6 +374,31 @@ async function recalcTestTotalMarks(testId: string) {
      ), updated_at = NOW() WHERE id = $1`,
     [testId],
   );
+
+  const testRow = await query(`SELECT COALESCE(total_marks, 0) AS total FROM tests WHERE id = $1`, [testId]);
+  const maxScore = Number(testRow.rows[0]?.total) || 0;
+
+  await query(
+    `UPDATE results SET
+       max_score = $2,
+       percentage = CASE WHEN $2 > 0 THEN (total_score / $2.0) * 100 ELSE 0 END
+     WHERE test_id = $1`,
+    [testId, maxScore],
+  );
+
+  const { applyRanksForTest } = await import('./ranking.service.js');
+  await applyRanksForTest(testId);
+}
+
+/** Recalculate test totals (and stored result %) for every test that includes this question. */
+export async function recalcTestsForQuestion(questionId: string) {
+  const tests = await query(
+    `SELECT DISTINCT test_id AS id FROM test_questions WHERE question_id = $1`,
+    [questionId],
+  );
+  for (const row of tests.rows) {
+    await recalcTestTotalMarks(row.id as string);
+  }
 }
 
 async function assertTestOrg(testId: string, organizationId: string) {

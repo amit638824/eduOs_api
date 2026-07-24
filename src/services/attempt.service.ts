@@ -242,9 +242,13 @@ export async function submitAttempt(
     const defaultNegative = examConfig.negativeMarking ? 0.25 : 0;
 
     const answers = await client.query(
-      `SELECT aa.question_id, aa.answer, q.type, q.marks, q.negative_marks
+      `SELECT aa.question_id, aa.answer, q.type,
+              COALESCE(tq.marks_override, q.marks) AS marks,
+              q.negative_marks
        FROM attempt_answers aa
        JOIN questions q ON q.id = aa.question_id
+       JOIN test_attempts ta ON ta.id = aa.attempt_id
+       JOIN test_questions tq ON tq.test_id = ta.test_id AND tq.question_id = aa.question_id
        WHERE aa.attempt_id = $1`,
       [attemptId],
     );
@@ -346,20 +350,8 @@ export async function submitAttempt(
     );
 
     const testId = attempt.rows[0].test_id as string;
-    const allResults = await client.query(
-      `SELECT id, total_score FROM results WHERE test_id = $1 ORDER BY total_score DESC, created_at ASC`,
-      [testId],
-    );
-    const rankTotal = allResults.rows.length;
-    for (let i = 0; i < allResults.rows.length; i++) {
-      const rank = i + 1;
-      const percentile = rankTotal > 1 ? ((rankTotal - rank) / (rankTotal - 1)) * 100 : 100;
-      await client.query(`UPDATE results SET rank = $2, percentile = $3 WHERE id = $1`, [
-        allResults.rows[i].id,
-        rank,
-        percentile,
-      ]);
-    }
+    const { applyRanksForTest } = await import('./ranking.service.js');
+    await applyRanksForTest(testId, (sql, params) => client.query(sql, params));
 
     const ranked = await client.query(
       `SELECT id, attempt_id, total_score, max_score, percentage, accuracy, rank, percentile, created_at

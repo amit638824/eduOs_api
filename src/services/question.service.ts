@@ -1,6 +1,7 @@
 import { query, withTransaction } from '../config/database.js';
 import { ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import { recalcTestsForQuestion } from './test.service.js';
 
 export interface QuestionOptionInput {
   content: Record<string, unknown>;
@@ -139,7 +140,7 @@ export async function updateQuestion(
   organizationId: string,
   input: CreateQuestionInput,
 ) {
-  return withTransaction(async (client) => {
+  const updated = await withTransaction(async (client) => {
     const existing = await client.query(
       `SELECT id FROM questions WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL`,
       [id, organizationId],
@@ -191,6 +192,9 @@ export async function updateQuestion(
 
     return q.rows[0];
   });
+
+  await recalcTestsForQuestion(id);
+  return updated;
 }
 
 export async function deleteQuestion(id: string, organizationId: string) {

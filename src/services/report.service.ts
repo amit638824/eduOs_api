@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
+import { applyRanksForTest } from './ranking.service.js';
 
 export async function getTestReport(testId: string, organizationId: string) {
   const test = await query(
@@ -69,21 +70,8 @@ export async function computeRanksForTest(testId: string, organizationId: string
   ]);
   if (!test.rows[0]) throw new NotFoundError('Test');
 
-  const results = await query(
-    `SELECT id, total_score FROM results WHERE test_id = $1 ORDER BY total_score DESC, created_at ASC`,
-    [testId],
-  );
-  const total = results.rows.length;
-  for (let i = 0; i < results.rows.length; i++) {
-    const rank = i + 1;
-    const percentile = total > 1 ? ((total - rank) / (total - 1)) * 100 : 100;
-    await query(`UPDATE results SET rank = $2, percentile = $3 WHERE id = $1`, [
-      results.rows[i].id,
-      rank,
-      percentile,
-    ]);
-  }
-  return { message: 'Ranks computed', count: total };
+  const count = await applyRanksForTest(testId);
+  return { message: 'Ranks computed', count };
 }
 
 export async function getOrgOverviewReport(organizationId: string) {
