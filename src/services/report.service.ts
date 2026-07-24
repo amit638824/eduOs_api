@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import { applyRanksForTest } from './ranking.service.js';
+import { formatDateTime } from '../utils/dateFormat.js';
 
 export async function getTestReport(testId: string, organizationId: string) {
   const test = await query(
@@ -48,19 +49,9 @@ export async function exportTestReportCsv(testId: string, organizationId: string
     String(r.max_score),
     String(Number(r.percentage).toFixed(2)),
     String(Number(r.accuracy).toFixed(2)),
-    formatCsvDate(r.created_at as string | Date),
+    formatDateTime(r.created_at as string | Date),
   ]);
   return [headers.join(','), ...rows.map((row) => row.map((c) => `"${c}"`).join(','))].join('\n');
-}
-
-/** e.g. 17 July 2026 */
-function formatCsvDate(value: string | Date): string {
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = d.toLocaleString('en-GB', { month: 'long' });
-  const year = d.getFullYear();
-  return `${day} ${month} ${year}`;
 }
 
 export async function computeRanksForTest(testId: string, organizationId: string) {
