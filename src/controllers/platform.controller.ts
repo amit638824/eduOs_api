@@ -11,6 +11,20 @@ import * as reportService from '../services/report.service.js';
 import * as orgService from '../services/organization.service.js';
 import { sendUserCredentialsEmail } from '../services/email.service.js';
 import { resolveOrganizationId } from '../utils/orgAccess.js';
+import { ForbiddenError } from '../utils/errors.js';
+
+function isElevatedAdmin(roles: string[]) {
+  return roles.includes('super_admin') || roles.includes('org_admin');
+}
+
+/** Staff may only create / promote student accounts */
+function assertStaffUserMutationAllowed(roles: string[], role?: string) {
+  if (isElevatedAdmin(roles)) return;
+  if (!roles.includes('staff')) return;
+  if (role && role !== 'student') {
+    throw new ForbiddenError('Organization staff can only manage student accounts');
+  }
+}
 
 async function orgContext(req: Request) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
@@ -130,6 +144,7 @@ export async function listUsers(req: Request, res: Response, next: NextFunction)
 export async function createUser(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
+    assertStaffUserMutationAllowed(req.user!.roles, req.body.role);
     const user = await adminUserService.createUser(orgId, req.body);
 
     let orgName: string | undefined;
@@ -181,6 +196,7 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
   try {
     const { userId } = vParams(req) as { userId: string };
     const { orgId } = await orgContext(req);
+    assertStaffUserMutationAllowed(req.user!.roles, req.body.role);
     const user = await adminUserService.updateUser(userId, orgId, req.body);
     res.json({ success: true, data: user });
   } catch (e) {

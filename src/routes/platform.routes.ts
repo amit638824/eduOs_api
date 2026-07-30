@@ -45,14 +45,14 @@ router.post(
   '/branches/:branchId/departments',
   validate(branchIdParamSchema, 'params'),
   validate(createDepartmentSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.createDepartment,
 );
 router.patch(
   '/departments/:id',
   validate(uuidParamSchema, 'params'),
   validate(updateDepartmentSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.updateDepartment,
 );
 router.delete(
@@ -81,7 +81,7 @@ router.delete(
 router.get(
   '/academic-sessions',
   validate(paginationSchema, 'query'),
-  requireRoles('org_admin', 'super_admin', 'teacher'),
+  requireRoles('org_admin', 'super_admin', 'teacher', 'staff'),
   platformController.listAcademicSessions,
 );
 router.post(
@@ -108,31 +108,31 @@ router.delete(
 router.get(
   '/users',
   validate(listUsersQuerySchema, 'query'),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.listUsers,
 );
 router.get(
   '/users/enrollment-number/preview',
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.previewEnrollmentNumber,
 );
 router.post(
   '/users',
   validate(createAdminUserSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.createUser,
 );
 router.get(
   '/users/:userId',
   validate(userIdParamSchema, 'params'),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.getUser,
 );
 router.patch(
   '/users/:userId',
   validate(userIdParamSchema, 'params'),
   validate(updateAdminUserSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.updateUser,
 );
 router.delete(
@@ -158,7 +158,7 @@ router.patch(
   '/users/:userId/status',
   validate(userIdParamSchema, 'params'),
   validate(updateUserStatusSchema),
-  requireRoles('org_admin', 'super_admin'),
+  requireRoles('org_admin', 'super_admin', 'staff'),
   platformController.updateUserStatus,
 );
 
@@ -231,24 +231,24 @@ router.get(
 router.get('/activity-logs', validate(paginationSchema, 'query'), platformController.listActivityLogs);
 
 // Reports
-router.get('/reports/overview', requireRoles('org_admin', 'super_admin', 'teacher'), platformController.getOrgOverviewReport);
+router.get('/reports/overview', requireRoles('org_admin', 'super_admin', 'teacher', 'staff'), platformController.getOrgOverviewReport);
 router.get(
   '/reports/tests/:testId',
   validate(testIdParamSchema, 'params'),
-  requireRoles('org_admin', 'super_admin', 'teacher'),
+  requireRoles('org_admin', 'super_admin', 'teacher', 'staff'),
   platformController.getTestReport,
 );
 router.get(
   '/reports/tests/:testId/export',
   validate(testIdParamSchema, 'params'),
-  requireRoles('org_admin', 'super_admin', 'teacher'),
+  requireRoles('org_admin', 'super_admin', 'teacher', 'staff'),
   platformController.exportTestReport,
 );
 router.post(
   '/reports/tests/:testId/compute-ranks',
   validate(testIdParamSchema, 'params'),
   forbidSuperAdmin('Super Admin cannot recompute ranks'),
-  requireRoles('org_admin', 'teacher'),
+  requireRoles('org_admin', 'teacher', 'staff'),
   platformController.computeRanks,
 );
 

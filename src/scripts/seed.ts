@@ -23,6 +23,7 @@ const RBAC_SQL = `
 INSERT INTO roles (name, display_name, description, is_system) VALUES
   ('super_admin', 'Super Admin', 'Platform-wide administrator — manages all organizations', TRUE),
   ('org_admin', 'Organization Admin', 'Manages entire organization after verification', TRUE),
+  ('staff', 'Organization Staff', 'Adds students, manages question bank, tests, and views results', TRUE),
   ('branch_admin', 'Branch Admin', 'Manages a branch', TRUE),
   ('teacher', 'Teacher', 'Creates questions and tests under department subjects', TRUE),
   ('examiner', 'Examiner', 'Manages exam conduct', TRUE),
@@ -103,6 +104,21 @@ JOIN permissions p ON p.resource IN (
   'attempt', 'result', 'analytics', 'report', 'settings', 'audit_log', 'payment'
 ) AND NOT (p.resource = 'organization' AND p.action = 'verify')
 WHERE r.name = 'org_admin'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r
+JOIN permissions p ON (
+  (p.resource = 'user' AND p.action IN ('create', 'read', 'update'))
+  OR (p.resource = 'question' AND p.action IN ('create', 'read', 'update', 'delete', 'import', 'approve'))
+  OR (p.resource = 'test' AND p.action IN ('create', 'read', 'update', 'delete', 'publish', 'assign'))
+  OR (p.resource IN ('subject', 'topic') AND p.action IN ('create', 'read', 'update'))
+  OR (p.resource = 'department' AND p.action IN ('create', 'read', 'update'))
+  OR (p.resource IN ('organization', 'branch') AND p.action = 'read')
+  OR (p.resource IN ('result', 'analytics', 'report') AND p.action IN ('read', 'export'))
+  OR (p.resource = 'attempt' AND p.action IN ('read', 'manage'))
+  OR (p.resource = 'settings' AND p.action = 'read')
+) WHERE r.name = 'staff'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)

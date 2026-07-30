@@ -419,7 +419,7 @@ export async function listAttempts(req: Request, res: Response, next: NextFuncti
       testId?: string;
       studentId?: string;
     };
-    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'teacher', 'examiner', 'evaluator'];
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
     const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
     let filterStudentId = studentId;
     if (!isStaff) {

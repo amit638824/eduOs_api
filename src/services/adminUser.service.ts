@@ -4,7 +4,7 @@ import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors.js
 import { PaginatedResult } from '../types/express.js';
 import { assertEnrollmentNoAvailable, resolveEnrollmentNo, suggestEnrollmentNo } from './enrollment.service.js';
 
-const ALLOWED_ASSIGN_ROLES = new Set(['student', 'teacher', 'org_admin']);
+const ALLOWED_ASSIGN_ROLES = new Set(['student', 'teacher', 'org_admin', 'staff']);
 
 async function assertBranchInOrg(branchId: string | undefined, organizationId: string) {
   if (!branchId) return;
@@ -92,7 +92,7 @@ export async function createUser(
     firstName: string;
     lastName: string;
     phone?: string;
-    role: 'student' | 'teacher' | 'org_admin';
+    role: 'student' | 'teacher' | 'org_admin' | 'staff';
     branchId?: string;
     enrollmentNo?: string;
   },
@@ -156,7 +156,7 @@ export async function updateUser(
     lastName?: string;
     phone?: string;
     branchId?: string | null;
-    role?: 'student' | 'teacher' | 'org_admin';
+    role?: 'student' | 'teacher' | 'org_admin' | 'staff';
     enrollmentNo?: string;
   },
 ) {
@@ -197,7 +197,7 @@ export async function updateUser(
       await client.query(
         `DELETE FROM user_roles ur USING roles r
          WHERE ur.role_id = r.id AND ur.user_id = $1
-           AND r.name IN ('student', 'teacher', 'org_admin')`,
+           AND r.name IN ('student', 'teacher', 'org_admin', 'staff')`,
         [userId],
       );
       await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [

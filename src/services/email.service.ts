@@ -169,14 +169,20 @@ export async function sendWelcomeEmail(email: string, firstName: string): Promis
 export async function sendUserCredentialsEmail(input: {
   to: string;
   firstName: string;
-  role: 'student' | 'teacher' | 'org_admin';
+  role: 'student' | 'teacher' | 'org_admin' | 'staff';
   loginEmail: string;
   enrollmentNo?: string | null;
   temporaryPassword: string;
   orgName?: string;
 }): Promise<boolean> {
   const roleLabel =
-    input.role === 'teacher' ? 'Faculty' : input.role === 'student' ? 'Student' : 'Organization Admin';
+    input.role === 'teacher'
+      ? 'Faculty'
+      : input.role === 'student'
+        ? 'Student'
+        : input.role === 'staff'
+          ? 'Organization Staff'
+          : 'Organization Admin';
   const loginUrl = frontendUrl('/login');
   return sendEmail({
     to: input.to,

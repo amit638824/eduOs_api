@@ -63,8 +63,9 @@ export async function getTestById(id: string, organizationId: string) {
       `SELECT tq.id, tq.section_id, tq.question_id, tq.sort_order, tq.marks_override,
               q.type, q.content, q.marks, q.difficulty
        FROM test_questions tq
-       JOIN questions q ON q.id = tq.question_id
-       WHERE tq.test_id = $1 ORDER BY tq.sort_order`,
+       LEFT JOIN questions q ON q.id = tq.question_id AND q.archived_at IS NULL
+       WHERE tq.test_id = $1
+       ORDER BY tq.sort_order, tq.id`,
       [id],
     ),
   ]);
@@ -184,6 +185,10 @@ export async function addQuestionToTest(
     const result = await query(
       `INSERT INTO test_questions (test_id, section_id, question_id, sort_order, marks_override)
        VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (test_id, question_id) DO UPDATE
+         SET sort_order = COALESCE(EXCLUDED.sort_order, test_questions.sort_order),
+             marks_override = COALESCE(EXCLUDED.marks_override, test_questions.marks_override),
+             section_id = COALESCE(EXCLUDED.section_id, test_questions.section_id)
        RETURNING id, test_id, question_id, section_id, sort_order`,
       [
         testId,
@@ -197,6 +202,13 @@ export async function addQuestionToTest(
     return result.rows[0];
   } catch (err: unknown) {
     if ((err as { code?: string }).code === '23505') {
+      // Race: treat as already present
+      const existing = await query(
+        `SELECT id, test_id, question_id, section_id, sort_order
+         FROM test_questions WHERE test_id = $1 AND question_id = $2`,
+        [testId, input.questionId],
+      );
+      if (existing.rows[0]) return existing.rows[0];
       throw new ConflictError('Question already added to this test');
     }
     throw err;

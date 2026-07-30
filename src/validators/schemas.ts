@@ -265,7 +265,7 @@ export const createAdminUserSchema = z.object({
   firstName: z.string().min(1).max(100).trim(),
   lastName: z.string().min(1).max(100).trim(),
   phone: z.string().max(20).optional(),
-  role: z.enum(['student', 'teacher', 'org_admin']),
+  role: z.enum(['student', 'teacher', 'org_admin', 'staff']),
   branchId: z.string().uuid().optional(),
   /** Student enrollment / admission number — auto-generated if omitted */
   enrollmentNo: z.string().min(2).max(50).trim().optional(),
@@ -276,12 +276,12 @@ export const updateAdminUserSchema = z.object({
   lastName: z.string().min(1).max(100).trim().optional(),
   phone: z.string().max(20).optional(),
   branchId: z.string().uuid().nullable().optional(),
-  role: z.enum(['student', 'teacher', 'org_admin']).optional(),
+  role: z.enum(['student', 'teacher', 'org_admin', 'staff']).optional(),
   enrollmentNo: z.string().min(2).max(50).trim().optional(),
 });
 
 export const assignRoleSchema = z.object({
-  role: z.enum(['student', 'teacher', 'org_admin']),
+  role: z.enum(['student', 'teacher', 'org_admin', 'staff']),
 });
 
 export const updateUserStatusSchema = z.object({
