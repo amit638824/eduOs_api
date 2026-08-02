@@ -208,7 +208,7 @@ export async function deleteUser(req: Request, res: Response, next: NextFunction
   try {
     const { userId } = vParams(req) as { userId: string };
     const { orgId } = await orgContext(req);
-    const result = await adminUserService.softDeleteUser(userId, orgId);
+    const result = await adminUserService.hardDeleteUser(userId, orgId);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);

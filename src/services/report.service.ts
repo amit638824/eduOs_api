@@ -11,7 +11,7 @@ export async function getTestReport(testId: string, organizationId: string) {
   if (!test.rows[0]) throw new NotFoundError('Test');
 
   const attempts = await query(
-    `SELECT r.id, r.student_id, r.total_score, r.max_score, r.percentage, r.accuracy,
+    `SELECT r.id, r.attempt_id, r.student_id, r.total_score, r.max_score, r.percentage, r.accuracy,
             r.rank, r.percentile, r.created_at, u.first_name, u.last_name, u.email
      FROM results r
      JOIN students s ON s.id = r.student_id

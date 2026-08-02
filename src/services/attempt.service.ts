@@ -28,9 +28,12 @@ function countTabSwitches(proctoringLog: unknown): number {
 }
 
 export async function startAttempt(testId: string, studentId: string, organizationId: string) {
+  const { activateDueScheduledTests } = await import('./test.service.js');
+  await activateDueScheduledTests(organizationId);
+
   const test = await query(
-    `SELECT id, status, duration_minutes, config FROM tests
-     WHERE id = $1 AND organization_id = $2 AND status = 'live'`,
+    `SELECT id, status, duration_minutes, config, scheduled_start, scheduled_end FROM tests
+     WHERE id = $1 AND organization_id = $2 AND status IN ('live', 'scheduled') AND archived_at IS NULL`,
     [testId, organizationId],
   );
   if (!test.rows[0]) throw new NotFoundError('Test');
@@ -42,6 +45,20 @@ export async function startAttempt(testId: string, studentId: string, organizati
   );
   if (!assigned.rows[0]) {
     throw new ForbiddenError('Test is not assigned to you');
+  }
+
+  const scheduledStart = test.rows[0].scheduled_start
+    ? new Date(test.rows[0].scheduled_start as string)
+    : null;
+  const scheduledEnd = test.rows[0].scheduled_end
+    ? new Date(test.rows[0].scheduled_end as string)
+    : null;
+  if (test.rows[0].status === 'scheduled' || (scheduledStart && scheduledStart.getTime() > Date.now())) {
+    const opensAt = scheduledStart?.toISOString() ?? 'scheduled time';
+    throw new ForbiddenError(`Test is not live yet. Opens at ${opensAt}`);
+  }
+  if (scheduledEnd && scheduledEnd.getTime() < Date.now()) {
+    throw new ForbiddenError('This test window has ended');
   }
 
   const existing = await query(
@@ -264,7 +281,7 @@ export async function submitAttempt(
       total += 1;
 
       const optionsResult = await client.query(
-        `SELECT id, is_correct FROM question_options WHERE question_id = $1`,
+        `SELECT id, is_correct, content FROM question_options WHERE question_id = $1`,
         [row.question_id],
       );
       const correctIds = optionsResult.rows.filter((o) => o.is_correct).map((o) => o.id);
@@ -376,7 +393,37 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
     [attemptId, organizationId],
   );
   if (!result.rows[0]) throw new NotFoundError('Result');
-  return result.rows[0];
+
+  const questions = await query(
+    `SELECT aa.question_id, q.type, q.content,
+            COALESCE(tq.marks_override, q.marks) AS marks,
+            aa.answer, aa.is_correct, aa.marks_awarded, tq.sort_order,
+            COALESCE(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'id', qo.id,
+                    'content', qo.content,
+                    'is_correct', qo.is_correct,
+                    'sort_order', qo.sort_order
+                  )
+                  ORDER BY qo.sort_order, qo.id
+                )
+                FROM question_options qo
+                WHERE qo.question_id = q.id
+              ),
+              '[]'::json
+            ) AS options
+     FROM attempt_answers aa
+     JOIN questions q ON q.id = aa.question_id
+     JOIN test_attempts ta ON ta.id = aa.attempt_id
+     LEFT JOIN test_questions tq ON tq.test_id = ta.test_id AND tq.question_id = aa.question_id
+     WHERE aa.attempt_id = $1
+     ORDER BY tq.sort_order NULLS LAST, aa.question_id`,
+    [attemptId],
+  );
+
+  return { ...result.rows[0], questions: questions.rows };
 }
 
 export async function listAttempts(

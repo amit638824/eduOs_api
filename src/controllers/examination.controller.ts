@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { vQuery, vParams } from '../middleware/validate.js';
 import { resolveOrganizationId } from '../utils/orgAccess.js';
+import { ForbiddenError } from '../utils/errors.js';
 import * as subjectService from '../services/subject.service.js';
 import * as questionService from '../services/question.service.js';
 import * as testService from '../services/test.service.js';
@@ -299,7 +300,12 @@ export async function publishTest(req: Request, res: Response, next: NextFunctio
   try {
     const { orgId } = await orgContext(req);
     const { id } = vParams(req) as { id: string };
-    const test = await testService.publishTest(id, orgId);
+    const body = (req.body ?? {}) as {
+      mode?: 'live_now' | 'schedule';
+      scheduledStart?: string | null;
+      scheduledEnd?: string | null;
+    };
+    const test = await testService.publishTest(id, orgId, body);
     res.json({ success: true, data: test });
   } catch (e) {
     next(e);
@@ -404,6 +410,14 @@ export async function getResult(req: Request, res: Response, next: NextFunction)
     const { orgId } = await orgContext(req);
     const { attemptId } = vParams(req) as { attemptId: string };
     const result = await attemptService.getResultByAttemptId(attemptId, orgId);
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
+    const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    if (!isStaff) {
+      const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+      if ((result as { student_id?: string }).student_id !== studentId) {
+        throw new ForbiddenError('Not allowed to view this result');
+      }
+    }
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);

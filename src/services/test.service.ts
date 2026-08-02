@@ -285,7 +285,35 @@ export async function deleteTest(testId: string, organizationId: string) {
   return { id: result.rows[0].id, deleted: true };
 }
 
-export async function publishTest(testId: string, organizationId: string) {
+/** Flip scheduled tests to live when their start time has arrived. */
+export async function activateDueScheduledTests(organizationId?: string) {
+  const params: unknown[] = [];
+  let orgFilter = '';
+  if (organizationId) {
+    params.push(organizationId);
+    orgFilter = ` AND organization_id = $1`;
+  }
+  await query(
+    `UPDATE tests
+     SET status = 'live', published_at = COALESCE(published_at, NOW()), updated_at = NOW()
+     WHERE status = 'scheduled'
+       AND archived_at IS NULL
+       AND scheduled_start IS NOT NULL
+       AND scheduled_start <= NOW()
+       ${orgFilter}`,
+    params,
+  );
+}
+
+export async function publishTest(
+  testId: string,
+  organizationId: string,
+  options?: {
+    mode?: 'live_now' | 'schedule';
+    scheduledStart?: string | null;
+    scheduledEnd?: string | null;
+  },
+) {
   await assertTestOrg(testId, organizationId);
   const qCount = await query(
     `SELECT COUNT(*)::int AS cnt FROM test_questions WHERE test_id = $1`,
@@ -295,11 +323,42 @@ export async function publishTest(testId: string, organizationId: string) {
     throw new ConflictError('Add at least one question before publishing');
   }
 
+  const mode = options?.mode ?? 'live_now';
+  let scheduledStart = options?.scheduledStart ? new Date(options.scheduledStart) : null;
+  let scheduledEnd = options?.scheduledEnd ? new Date(options.scheduledEnd) : null;
+
+  if (mode === 'schedule') {
+    if (!scheduledStart || Number.isNaN(scheduledStart.getTime())) {
+      throw new ConflictError('Choose a valid schedule date and time');
+    }
+    if (scheduledStart.getTime() <= Date.now() + 30_000) {
+      // If start is essentially now, go live immediately
+      scheduledStart = null;
+    }
+    if (scheduledEnd && scheduledStart && scheduledEnd.getTime() <= scheduledStart.getTime()) {
+      throw new ConflictError('End time must be after the start time');
+    }
+  }
+
+  const goLive = mode === 'live_now' || !scheduledStart;
+  const status = goLive ? 'live' : 'scheduled';
+
   const result = await query(
-    `UPDATE tests SET status = 'live', published_at = NOW(), updated_at = NOW()
+    `UPDATE tests SET
+       status = $3::test_status,
+       published_at = CASE WHEN $3::text = 'live' THEN NOW() ELSE published_at END,
+       scheduled_start = $4::timestamptz,
+       scheduled_end = $5::timestamptz,
+       updated_at = NOW()
      WHERE id = $1 AND organization_id = $2 AND status IN ('draft', 'scheduled')
-     RETURNING id, status, published_at`,
-    [testId, organizationId],
+     RETURNING id, status, published_at, scheduled_start, scheduled_end, title, duration_minutes, total_marks`,
+    [
+      testId,
+      organizationId,
+      status,
+      goLive ? null : scheduledStart?.toISOString() ?? null,
+      scheduledEnd?.toISOString() ?? null,
+    ],
   );
   if (!result.rows[0]) throw new NotFoundError('Test');
   return result.rows[0];
@@ -350,10 +409,12 @@ export async function unassignStudentFromTest(
 }
 
 export async function listStudentAssignedTests(studentId: string, organizationId: string) {
+  await activateDueScheduledTests(organizationId);
   const result = await query(
     `SELECT DISTINCT ON (t.id)
             t.id, t.title, t.description, t.status, t.duration_minutes,
-            t.passing_marks, t.published_at, ta_assign.scheduled_at,
+            t.passing_marks, t.published_at, t.scheduled_start, t.scheduled_end,
+            ta_assign.scheduled_at,
             latest.id AS attempt_id,
             latest.status AS attempt_status,
             latest.submitted_at AS attempt_submitted_at,
@@ -370,7 +431,9 @@ export async function listStudentAssignedTests(studentId: string, organizationId
      ) latest ON TRUE
      LEFT JOIN results r ON r.attempt_id = latest.id
      WHERE ta_assign.assignee_type = 'student' AND ta_assign.assignee_id = $1
-       AND t.organization_id = $2 AND t.status = 'live' AND t.archived_at IS NULL
+       AND t.organization_id = $2
+       AND t.status IN ('live', 'scheduled')
+       AND t.archived_at IS NULL
      ORDER BY t.id, t.published_at DESC NULLS LAST`,
     [studentId, organizationId],
   );

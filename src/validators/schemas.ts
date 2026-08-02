@@ -157,6 +157,12 @@ export const createTestSchema = z.object({
   scheduledEnd: z.string().datetime().optional(),
 });
 
+export const publishTestSchema = z.object({
+  mode: z.enum(['live_now', 'schedule']).optional().default('live_now'),
+  scheduledStart: z.string().min(1).optional().nullable(),
+  scheduledEnd: z.string().min(1).optional().nullable(),
+});
+
 export const addTestSectionSchema = z.object({
   name: z.string().min(2).max(255).trim(),
   sortOrder: z.number().int().optional(),

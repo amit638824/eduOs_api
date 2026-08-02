@@ -14,6 +14,7 @@ import {
   updateQuestionSchema,
   createTestSchema,
   updateTestSchema,
+  publishTestSchema,
   addTestSectionSchema,
   addTestQuestionSchema,
   assignTestSchema,
@@ -71,7 +72,13 @@ router.delete(
   requirePermission('test', 'update'),
   examController.removeQuestionFromTest,
 );
-router.post('/tests/:id/publish', validate(uuidParamSchema, 'params'), requirePermission('test', 'publish'), examController.publishTest);
+router.post(
+  '/tests/:id/publish',
+  validate(uuidParamSchema, 'params'),
+  validate(publishTestSchema),
+  requirePermission('test', 'publish'),
+  examController.publishTest,
+);
 router.post('/tests/:id/assign', validate(uuidParamSchema, 'params'), validate(assignTestSchema), requirePermission('test', 'assign'), examController.assignTest);
 router.delete(
   '/tests/:id/assign/:studentId',

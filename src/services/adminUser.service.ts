@@ -260,6 +260,50 @@ export async function softDeleteUser(userId: string, organizationId: string) {
   return { message: 'User deleted', ...result.rows[0] };
 }
 
+/** Permanently remove a user and org-scoped profile rows. */
+export async function hardDeleteUser(userId: string, organizationId: string) {
+  return withTransaction(async (client) => {
+    const existing = await client.query(
+      `SELECT id, email FROM users
+       WHERE id = $1 AND organization_id = $2`,
+      [userId, organizationId],
+    );
+    if (!existing.rows[0]) throw new NotFoundError('User');
+
+    await client.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM otp_codes WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM user_roles WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM notifications WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM teachers WHERE user_id = $1`, [userId]);
+
+    const student = await client.query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
+    const studentId = student.rows[0]?.id as string | undefined;
+    if (studentId) {
+      await client.query(
+        `DELETE FROM attempt_answers WHERE attempt_id IN (
+           SELECT id FROM test_attempts WHERE student_id = $1
+         )`,
+        [studentId],
+      );
+      await client.query(`DELETE FROM results WHERE student_id = $1`, [studentId]);
+      await client.query(`DELETE FROM test_attempts WHERE student_id = $1`, [studentId]);
+      await client.query(
+        `DELETE FROM test_assignments WHERE assignee_type = 'student' AND assignee_id = $1`,
+        [studentId],
+      );
+      await client.query(`DELETE FROM students WHERE id = $1`, [studentId]);
+    }
+
+    await client.query(`DELETE FROM users WHERE id = $1 AND organization_id = $2`, [
+      userId,
+      organizationId,
+    ]);
+
+    return { message: 'User permanently deleted', id: userId, email: existing.rows[0].email };
+  });
+}
+
 export async function assignRole(userId: string, roleName: string, organizationId: string) {
   if (!ALLOWED_ASSIGN_ROLES.has(roleName)) {
     throw new ForbiddenError('Cannot assign this role');
