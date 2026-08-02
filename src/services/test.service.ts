@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import * as notificationService from './notification.service.js';
 
 export interface CreateTestInput {
   title: string;
@@ -293,16 +294,26 @@ export async function activateDueScheduledTests(organizationId?: string) {
     params.push(organizationId);
     orgFilter = ` AND organization_id = $1`;
   }
-  await query(
+  const activated = await query<{ id: string; title: string }>(
     `UPDATE tests
      SET status = 'live', published_at = COALESCE(published_at, NOW()), updated_at = NOW()
      WHERE status = 'scheduled'
        AND archived_at IS NULL
        AND scheduled_start IS NOT NULL
        AND scheduled_start <= NOW()
-       ${orgFilter}`,
+       ${orgFilter}
+     RETURNING id, title`,
     params,
   );
+
+  for (const test of activated.rows) {
+    void notificationService.notifyAssignedStudents(
+      test.id,
+      'Test is now live',
+      `"${test.title}" is live now. You can start the exam.`,
+      { testId: test.id, type: 'test_live' },
+    );
+  }
 }
 
 export async function publishTest(
@@ -361,6 +372,25 @@ export async function publishTest(
     ],
   );
   if (!result.rows[0]) throw new NotFoundError('Test');
+
+  const title = String(result.rows[0].title ?? 'Test');
+  if (goLive) {
+    void notificationService.notifyAssignedStudents(
+      testId,
+      'New test published',
+      `"${title}" is live now. Open My Tests to start.`,
+      { testId, type: 'test_published', status: 'live' },
+    );
+  } else {
+    const when = scheduledStart ? scheduledStart.toLocaleString() : 'the scheduled time';
+    void notificationService.notifyAssignedStudents(
+      testId,
+      'Test scheduled',
+      `"${title}" is scheduled and will open at ${when}.`,
+      { testId, type: 'test_scheduled', status: 'scheduled' },
+    );
+  }
+
   return result.rows[0];
 }
 
@@ -383,6 +413,22 @@ export async function assignTestToStudent(
      RETURNING id, test_id, assignee_type, assignee_id, scheduled_at, created_at`,
     [testId, studentId, scheduledAt ?? null],
   );
+
+  const test = await query<{ title: string; status: string }>(
+    `SELECT title, status FROM tests WHERE id = $1`,
+    [testId],
+  );
+  const title = test.rows[0]?.title ?? 'a test';
+  const status = test.rows[0]?.status ?? '';
+  void notificationService.notifyStudentByStudentId(
+    studentId,
+    'Test assigned',
+    status === 'live'
+      ? `"${title}" has been assigned to you and is live. Open My Tests to start.`
+      : `"${title}" has been assigned to you. You will be notified when it goes live.`,
+    { testId, type: 'test_assigned', status },
+  );
+
   return result.rows[0];
 }
 
@@ -398,6 +444,9 @@ export async function unassignStudentFromTest(
   );
   if (!student.rows[0]) throw new NotFoundError('Student');
 
+  const test = await query<{ title: string }>(`SELECT title FROM tests WHERE id = $1`, [testId]);
+  const title = test.rows[0]?.title ?? 'a test';
+
   const result = await query(
     `DELETE FROM test_assignments
      WHERE test_id = $1 AND assignee_type = 'student' AND assignee_id = $2
@@ -405,6 +454,14 @@ export async function unassignStudentFromTest(
     [testId, studentId],
   );
   if (!result.rows[0]) throw new NotFoundError('Assignment');
+
+  void notificationService.notifyStudentByStudentId(
+    studentId,
+    'Test unassigned',
+    `"${title}" is no longer assigned to you.`,
+    { testId, type: 'test_unassigned' },
+  );
+
   return { testId, studentId, removed: true };
 }
 

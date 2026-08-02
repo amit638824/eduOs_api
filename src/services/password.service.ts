@@ -5,6 +5,7 @@ import { NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import { logAudit } from '../utils/auditLogger.js';
 import { sendPasswordResetEmail } from './email.service.js';
 import { isSmtpConfigured } from '../config/env.js';
+import * as notificationService from './notification.service.js';
 
 export async function requestPasswordReset(email: string) {
   const user = await query<{ id: string; email: string }>(
@@ -92,5 +93,11 @@ export async function changePassword(userId: string, currentPassword: string, ne
     passwordHash,
   ]);
   await logAudit({ userId, action: 'change', resource: 'password' });
+  void notificationService.notifyUserInApp(
+    userId,
+    'Password updated',
+    'Your password was changed successfully. If you did not do this, contact your institute immediately.',
+    { type: 'password_changed' },
+  );
   return { message: 'Password updated successfully' };
 }

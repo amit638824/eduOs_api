@@ -2,6 +2,7 @@ import { query, withTransaction } from '../config/database.js';
 import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { parseExamConfig, seededShuffle } from '../utils/examConfig.js';
+import * as notificationService from './notification.service.js';
 
 export async function getStudentIdByUserId(userId: string): Promise<string> {
   const result = await query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
@@ -90,6 +91,15 @@ export async function startAttempt(testId: string, studentId: string, organizati
      RETURNING id, test_id, student_id, status, started_at`,
     [testId, studentId],
   );
+
+  const titleRow = await query<{ title: string }>(`SELECT title FROM tests WHERE id = $1`, [testId]);
+  void notificationService.notifyStudentByStudentId(
+    studentId,
+    'Exam started',
+    `You started "${titleRow.rows[0]?.title ?? 'the test'}". Good luck!`,
+    { testId, attemptId: result.rows[0].id, type: 'attempt_started' },
+  );
+
   return result.rows[0];
 }
 
@@ -376,7 +386,28 @@ export async function submitAttempt(
       [attemptId],
     );
 
-    return ranked.rows[0] ?? result.rows[0];
+    const out = ranked.rows[0] ?? result.rows[0];
+    const titleRow = await client.query<{ title: string }>(
+      `SELECT title FROM tests WHERE id = $1`,
+      [testId],
+    );
+    const pct = Number(out.percentage ?? 0).toFixed(1);
+    const score = `${out.total_score ?? 0}/${out.max_score ?? 0}`;
+    void notificationService.notifyStudentByStudentId(
+      studentId,
+      autoSubmit ? 'Exam auto-submitted' : 'Exam submitted',
+      autoSubmit
+        ? `"${titleRow.rows[0]?.title ?? 'Exam'}" was auto-submitted. Score: ${score} (${pct}%).`
+        : `"${titleRow.rows[0]?.title ?? 'Exam'}" submitted successfully. Score: ${score} (${pct}%). Check Results for details.`,
+      {
+        testId,
+        attemptId,
+        type: autoSubmit ? 'attempt_auto_submitted' : 'attempt_submitted',
+        percentage: out.percentage,
+      },
+    );
+
+    return out;
   });
 }
 

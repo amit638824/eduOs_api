@@ -3,6 +3,7 @@ import { hashPassword } from '../utils/security.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { assertEnrollmentNoAvailable, resolveEnrollmentNo, suggestEnrollmentNo } from './enrollment.service.js';
+import * as notificationService from './notification.service.js';
 
 const ALLOWED_ASSIGN_ROLES = new Set(['student', 'teacher', 'org_admin', 'staff']);
 
@@ -145,6 +146,18 @@ export async function createUser(
       );
     }
     return { ...user.rows[0], roles: [input.role], enrollment_no: enrollmentNo };
+  }).then((created) => {
+    if (input.role === 'student') {
+      void notificationService.notifyUserInApp(
+        created.id as string,
+        'Welcome to EduTech',
+        created.enrollment_no
+          ? `Your student account is ready. Enrollment No: ${created.enrollment_no}. Start exploring My Tests.`
+          : 'Your student account is ready. Start exploring My Tests.',
+        { type: 'account_created', enrollmentNo: created.enrollment_no },
+      );
+    }
+    return created;
   });
 }
 
@@ -348,5 +361,25 @@ export async function updateUserStatus(
     [userId, status, organizationId],
   );
   if (!result.rows[0]) throw new NotFoundError('User');
+
+  const isStudent = await query(
+    `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+     WHERE ur.user_id = $1 AND r.name = 'student' LIMIT 1`,
+    [userId],
+  );
+  if (isStudent.rows[0]) {
+    const labels: Record<string, string> = {
+      active: 'Your account has been activated. You can log in and take tests.',
+      inactive: 'Your account has been deactivated. Contact your institute if this is unexpected.',
+      suspended: 'Your account has been suspended. Contact your institute for help.',
+    };
+    void notificationService.notifyUserInApp(
+      userId,
+      `Account ${status}`,
+      labels[status] ?? `Your account status is now ${status}.`,
+      { type: 'account_status', status },
+    );
+  }
+
   return result.rows[0];
 }

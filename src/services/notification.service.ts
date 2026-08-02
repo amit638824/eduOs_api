@@ -53,6 +53,80 @@ export async function createNotification(input: {
   return result.rows[0];
 }
 
+/** In-app notification for a user — never throws (safe to fire-and-forget). */
+export async function notifyUserInApp(
+  userId: string,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+) {
+  try {
+    if (!userId) return null;
+    return await createNotification({
+      userId,
+      channel: 'in_app',
+      title,
+      body,
+      data,
+    });
+  } catch (err) {
+    console.error('[notification] notifyUserInApp failed:', err);
+    return null;
+  }
+}
+
+/** Resolve students.id → users.id and notify. */
+export async function notifyStudentByStudentId(
+  studentId: string,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+) {
+  try {
+    const row = await query<{ user_id: string }>(
+      `SELECT user_id FROM students WHERE id = $1`,
+      [studentId],
+    );
+    const userId = row.rows[0]?.user_id;
+    if (!userId) return null;
+    return await notifyUserInApp(userId, title, body, data);
+  } catch (err) {
+    console.error('[notification] notifyStudentByStudentId failed:', err);
+    return null;
+  }
+}
+
+/** Notify every student assigned to a test. */
+export async function notifyAssignedStudents(
+  testId: string,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+) {
+  try {
+    const rows = await query<{ user_id: string; student_id: string }>(
+      `SELECT s.user_id, s.id AS student_id
+       FROM test_assignments ta
+       JOIN students s ON s.id = ta.assignee_id
+       WHERE ta.test_id = $1 AND ta.assignee_type = 'student'`,
+      [testId],
+    );
+    await Promise.all(
+      rows.rows.map((r) =>
+        notifyUserInApp(r.user_id, title, body, {
+          ...data,
+          testId,
+          studentId: r.student_id,
+        }),
+      ),
+    );
+    return rows.rows.length;
+  } catch (err) {
+    console.error('[notification] notifyAssignedStudents failed:', err);
+    return 0;
+  }
+}
+
 export async function markNotificationRead(userId: string, notificationId: string) {
   const result = await query(
     `UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2 RETURNING id`,
