@@ -393,7 +393,7 @@ async function recalcTestTotalMarks(testId: string) {
   await query(
     `UPDATE results SET
        max_score = $2,
-       percentage = CASE WHEN $2 > 0 THEN (total_score / $2.0) * 100 ELSE 0 END
+       percentage = CASE WHEN $2::numeric > 0 THEN (total_score / $2::numeric) * 100 ELSE 0 END
      WHERE test_id = $1`,
     [testId, maxScore],
   );
