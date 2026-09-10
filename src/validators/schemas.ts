@@ -142,6 +142,10 @@ export const createQuestionSchema = z.object({
 
 export const updateQuestionSchema = createQuestionSchema;
 
+export const importQuestionsSchema = z.object({
+  csvText: z.string().min(20).max(1_500_000),
+});
+
 export const listSubjectsQuerySchema = paginationSchema.extend({
   departmentId: z.string().uuid().optional(),
 });

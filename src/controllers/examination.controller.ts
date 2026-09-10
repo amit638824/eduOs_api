@@ -4,6 +4,7 @@ import { resolveOrganizationId } from '../utils/orgAccess.js';
 import { ForbiddenError } from '../utils/errors.js';
 import * as subjectService from '../services/subject.service.js';
 import * as questionService from '../services/question.service.js';
+import * as questionImportService from '../services/questionImport.service.js';
 import * as testService from '../services/test.service.js';
 import * as attemptService from '../services/attempt.service.js';
 import * as analyticsService from '../services/analytics.service.js';
@@ -170,6 +171,27 @@ export async function approveQuestion(req: Request, res: Response, next: NextFun
     const { id } = vParams(req) as { id: string };
     const question = await questionService.approveQuestion(id, orgId, userId);
     res.json({ success: true, data: question });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function downloadQuestionImportTemplate(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="question-bank-import-example.csv"');
+    res.send(questionImportService.QUESTION_IMPORT_CSV_TEMPLATE);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function importQuestions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = await orgContext(req);
+    const csvText = String(req.body?.csvText ?? '');
+    const summary = await questionImportService.importQuestionsFromCsv(orgId, userId, csvText);
+    res.json({ success: true, data: summary });
   } catch (e) {
     next(e);
   }

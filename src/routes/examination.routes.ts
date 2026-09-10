@@ -12,6 +12,7 @@ import {
   createCategorySchema,
   createQuestionSchema,
   updateQuestionSchema,
+  importQuestionsSchema,
   createTestSchema,
   updateTestSchema,
   publishTestSchema,
@@ -50,6 +51,17 @@ router.post('/chapters/:chapterId/topics', validate(chapterIdParam, 'params'), v
 router.get('/question-categories', requirePermission('question', 'read'), examController.listCategories);
 router.post('/question-categories', validate(createCategorySchema), requirePermission('question', 'create'), examController.createCategory);
 router.get('/questions', validate(listQuestionsQuerySchema, 'query'), requirePermission('question', 'read'), examController.listQuestions);
+router.get(
+  '/questions/import-template',
+  requirePermission('question', 'read'),
+  examController.downloadQuestionImportTemplate,
+);
+router.post(
+  '/questions/import',
+  validate(importQuestionsSchema),
+  requirePermission('question', 'create'),
+  examController.importQuestions,
+);
 router.get('/questions/:id', validate(uuidParamSchema, 'params'), requirePermission('question', 'read'), examController.getQuestion);
 router.post('/questions', validate(createQuestionSchema), requirePermission('question', 'create'), examController.createQuestion);
 router.patch('/questions/:id', validate(uuidParamSchema, 'params'), validate(updateQuestionSchema), requirePermission('question', 'update'), examController.updateQuestion);

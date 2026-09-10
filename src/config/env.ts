@@ -58,13 +58,13 @@ export const env = {
   NODE_ENV,
   PORT: num('PORT', 3000),
 
-  DB_TYPE: 'postgres' as const,
+  DB_TYPE: 'mysql' as const,
   DB_HOST: str('DB_HOST', 'localhost'),
-  DB_PORT: num('DB_PORT', 5432),
-  DB_USERNAME: str('DB_USERNAME', 'postgres'),
+  DB_PORT: num('DB_PORT', 3306),
+  DB_USERNAME: str('DB_USERNAME', 'root'),
   DB_PASSWORD: str('DB_PASSWORD', ''),
   DB_DATABASE: str('DB_DATABASE', 'edutech'),
-  DB_SSL: bool('DB_SSL', true),
+  DB_SSL: bool('DB_SSL', false),
   DB_SSL_REJECT_UNAUTHORIZED: bool('DB_SSL_REJECT_UNAUTHORIZED', false),
   DB_POOL_MAX: num('DB_POOL_MAX', 20),
   DB_IDLE_TIMEOUT_MS: num('DB_IDLE_TIMEOUT_MS', 30_000),
@@ -81,7 +81,7 @@ export const env = {
   AUTH_RATE_LIMIT_MAX: num('AUTH_RATE_LIMIT_MAX', 10),
 
   BCRYPT_ROUNDS: num('BCRYPT_ROUNDS', 12),
-  APP_NAME: str('APP_NAME', 'Super Computer Academy'),
+  APP_NAME: str('APP_NAME', 'Edumatra'),
   TRUST_PROXY: num('TRUST_PROXY', 1),
 
   /** Used in email links (login, reset password, dashboard) */

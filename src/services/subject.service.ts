@@ -107,7 +107,7 @@ export async function createTopic(
     `INSERT INTO topics (chapter_id, name, difficulty, tags, sort_order)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, chapter_id, name, difficulty, tags, sort_order, created_at`,
-    [chapterId, input.name, input.difficulty ?? null, input.tags ?? [], input.sortOrder ?? 0],
+    [chapterId, input.name, input.difficulty ?? null, JSON.stringify(input.tags ?? []), input.sortOrder ?? 0],
   );
   return result.rows[0];
 }

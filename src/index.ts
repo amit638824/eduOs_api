@@ -1,12 +1,19 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
-import { closeDatabase, checkDatabaseConnection } from './config/database.js';
+import { closeDatabase, checkDatabaseConnection, ensureDatabaseExists } from './config/database.js';
 
 async function bootstrap() {
+  try {
+    await ensureDatabaseExists();
+  } catch (err) {
+    console.error('Failed to connect to MySQL. Check your .env credentials.', err);
+    process.exit(1);
+  }
+
   const dbOk = await checkDatabaseConnection();
   if (!dbOk) {
-    console.error('Failed to connect to PostgreSQL. Check your .env credentials.');
+    console.error('Failed to connect to MySQL database. Check DB_DATABASE and run npm run db:setup.');
     process.exit(1);
   }
 

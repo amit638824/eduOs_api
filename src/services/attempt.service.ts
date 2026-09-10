@@ -431,26 +431,27 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
             aa.answer, aa.is_correct, aa.marks_awarded, tq.sort_order,
             COALESCE(
               (
-                SELECT json_agg(
-                  json_build_object(
-                    'id', qo.id,
-                    'content', qo.content,
-                    'is_correct', qo.is_correct,
-                    'sort_order', qo.sort_order
-                  )
-                  ORDER BY qo.sort_order, qo.id
-                )
-                FROM question_options qo
-                WHERE qo.question_id = q.id
+                SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                  'id', qo.id,
+                  'content', CAST(qo.content AS JSON),
+                  'is_correct', qo.is_correct,
+                  'sort_order', qo.sort_order
+                ))
+                FROM (
+                  SELECT id, content, is_correct, sort_order
+                  FROM question_options
+                  WHERE question_id = q.id
+                  ORDER BY sort_order, id
+                ) qo
               ),
-              '[]'::json
+              JSON_ARRAY()
             ) AS options
      FROM attempt_answers aa
      JOIN questions q ON q.id = aa.question_id
      JOIN test_attempts ta ON ta.id = aa.attempt_id
      LEFT JOIN test_questions tq ON tq.test_id = ta.test_id AND tq.question_id = aa.question_id
      WHERE aa.attempt_id = $1
-     ORDER BY tq.sort_order NULLS LAST, aa.question_id`,
+     ORDER BY (tq.sort_order IS NULL), tq.sort_order, aa.question_id`,
     [attemptId],
   );
 

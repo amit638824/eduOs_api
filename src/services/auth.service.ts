@@ -1,5 +1,4 @@
-import { PoolClient } from 'pg';
-import { query, withTransaction } from '../config/database.js';
+import { DbClient, query, withTransaction } from '../config/database.js';
 import {
   hashPassword,
   signAccessToken,
@@ -40,7 +39,7 @@ export interface RegisterInput {
   role: 'student' | 'teacher' | 'org_admin';
 }
 
-async function getUserRoles(userId: string, client?: PoolClient): Promise<string[]> {
+async function getUserRoles(userId: string, client?: DbClient): Promise<string[]> {
   const q = client ? client.query.bind(client) : query;
   const result = await q<{ name: string }>(
     `SELECT r.name FROM user_roles ur
@@ -55,7 +54,7 @@ async function createRefreshTokenRecord(
   userId: string,
   deviceInfo: Record<string, unknown>,
   ipAddress: string | undefined,
-  client?: PoolClient,
+  client?: DbClient,
 ): Promise<{ token: string; tokenId: string }> {
   const tokenId = generateSecureToken(16);
   const refreshToken = signRefreshToken(userId, tokenId);
@@ -75,7 +74,7 @@ async function buildAuthResponse(
   user: DbUser,
   deviceInfo: Record<string, unknown>,
   ipAddress?: string,
-  client?: PoolClient,
+  client?: DbClient,
 ): Promise<{ user: Record<string, unknown>; tokens: AuthTokens }> {
   const roles = await getUserRoles(user.id, client);
   const accessToken = signAccessToken({

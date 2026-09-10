@@ -1,7 +1,7 @@
 -- Organization Staff: ops role for questions, tests, students, results
 INSERT INTO roles (name, display_name, description, is_system) VALUES
-  ('staff', 'Organization Staff', 'Adds students, manages question bank, tests, and views results', TRUE)
-ON CONFLICT (name) DO NOTHING;
+  ('staff', 'Organization Staff', 'Adds students, manages question bank, tests, and views results', 1)
+ON DUPLICATE KEY UPDATE name = name;
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r
@@ -17,4 +17,4 @@ JOIN permissions p ON (
   OR (p.resource = 'settings' AND p.action = 'read')
 )
 WHERE r.name = 'staff'
-ON CONFLICT DO NOTHING;
+ON DUPLICATE KEY UPDATE role_id = role_id;

@@ -68,7 +68,7 @@ export async function createOrganization(
       contactEmail,
     };
 
-    const orgResult = await client.query(
+    const orgResult = await client.query<CreateOrganizationResult>(
       `INSERT INTO organizations (name, slug, logo_url, theme, settings, is_active)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, name, slug, logo_url, theme, settings, is_active, created_at`,
@@ -307,7 +307,7 @@ export async function deleteOrganization(id: string) {
     `UPDATE organizations SET
        deleted_at = NOW(),
        is_active = FALSE,
-       slug = slug || '-deleted-' || substr(id::text, 1, 8),
+       slug = CONCAT(slug, '-deleted-', LEFT(id, 8)),
        updated_at = NOW()
      WHERE id = $1`,
     [id],

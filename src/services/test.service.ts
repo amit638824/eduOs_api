@@ -202,7 +202,7 @@ export async function addQuestionToTest(
     await recalcTestTotalMarks(testId);
     return result.rows[0];
   } catch (err: unknown) {
-    if ((err as { code?: string }).code === '23505') {
+    if ((err as { code?: string; errno?: number }).code === 'ER_DUP_ENTRY' || (err as { errno?: number }).errno === 1062) {
       // Race: treat as already present
       const existing = await query(
         `SELECT id, test_id, question_id, section_id, sort_order
@@ -468,8 +468,7 @@ export async function unassignStudentFromTest(
 export async function listStudentAssignedTests(studentId: string, organizationId: string) {
   await activateDueScheduledTests(organizationId);
   const result = await query(
-    `SELECT DISTINCT ON (t.id)
-            t.id, t.title, t.description, t.status, t.duration_minutes,
+    `SELECT t.id, t.title, t.description, t.status, t.duration_minutes,
             t.passing_marks, t.published_at, t.scheduled_start, t.scheduled_end,
             ta_assign.scheduled_at,
             latest.id AS attempt_id,
@@ -477,21 +476,24 @@ export async function listStudentAssignedTests(studentId: string, organizationId
             latest.submitted_at AS attempt_submitted_at,
             r.percentage AS result_percentage,
             r.attempt_id AS result_attempt_id
-     FROM test_assignments ta_assign
+     FROM (
+       SELECT test_id, MAX(scheduled_at) AS scheduled_at
+       FROM test_assignments
+       WHERE assignee_type = 'student' AND assignee_id = $1
+       GROUP BY test_id
+     ) ta_assign
      JOIN tests t ON t.id = ta_assign.test_id
-     LEFT JOIN LATERAL (
-       SELECT ta.id, ta.status, ta.submitted_at
-       FROM test_attempts ta
+     LEFT JOIN test_attempts latest ON latest.id = (
+       SELECT ta.id FROM test_attempts ta
        WHERE ta.test_id = t.id AND ta.student_id = $1
        ORDER BY ta.started_at DESC
        LIMIT 1
-     ) latest ON TRUE
+     )
      LEFT JOIN results r ON r.attempt_id = latest.id
-     WHERE ta_assign.assignee_type = 'student' AND ta_assign.assignee_id = $1
-       AND t.organization_id = $2
+     WHERE t.organization_id = $2
        AND t.status IN ('live', 'scheduled')
        AND t.archived_at IS NULL
-     ORDER BY t.id, t.published_at DESC NULLS LAST`,
+     ORDER BY (t.published_at IS NULL), t.published_at DESC`,
     [studentId, organizationId],
   );
   return result.rows;

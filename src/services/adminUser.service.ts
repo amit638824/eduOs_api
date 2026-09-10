@@ -1,4 +1,4 @@
-import { query, withTransaction } from '../config/database.js';
+import { query, withTransaction, type DbRow } from '../config/database.js';
 import { hashPassword } from '../utils/security.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
@@ -44,13 +44,17 @@ export async function listUsers(
     query(
       `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
               st.admission_no AS enrollment_no,
-              COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
+              COALESCE(
+                (SELECT JSON_ARRAYAGG(sr.name)
+                 FROM (SELECT DISTINCT r.name AS name
+                       FROM user_roles ur
+                       JOIN roles r ON r.id = ur.role_id
+                       WHERE ur.user_id = u.id) sr),
+                JSON_ARRAY()
+              ) AS roles
        FROM users u
        LEFT JOIN students st ON st.user_id = u.id
-       LEFT JOIN user_roles ur ON ur.user_id = u.id
-       LEFT JOIN roles r ON r.id = ur.role_id
        WHERE ${where}
-       GROUP BY u.id, st.admission_no
        ORDER BY u.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
@@ -67,13 +71,17 @@ export async function getUser(userId: string, organizationId: string) {
   const result = await query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
             st.admission_no AS enrollment_no,
-            COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
+            COALESCE(
+              (SELECT JSON_ARRAYAGG(sr.name)
+               FROM (SELECT DISTINCT r.name AS name
+                     FROM user_roles ur
+                     JOIN roles r ON r.id = ur.role_id
+                     WHERE ur.user_id = u.id) sr),
+              JSON_ARRAY()
+            ) AS roles
      FROM users u
      LEFT JOIN students st ON st.user_id = u.id
-     LEFT JOIN user_roles ur ON ur.user_id = u.id
-     LEFT JOIN roles r ON r.id = ur.role_id
-     WHERE u.id = $1 AND u.organization_id = $2 AND u.deleted_at IS NULL
-     GROUP BY u.id, st.admission_no`,
+     WHERE u.id = $1 AND u.organization_id = $2 AND u.deleted_at IS NULL`,
     [userId, organizationId],
   );
   if (!result.rows[0]) throw new NotFoundError('User');
@@ -106,7 +114,7 @@ export async function createUser(
 
   const passwordHash = await hashPassword(input.password);
   return withTransaction(async (client) => {
-    const user = await client.query(
+    const user = await client.query<DbRow>(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone, organization_id, branch_id, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
        RETURNING id, email, first_name, last_name, organization_id, status, created_at`,
@@ -145,12 +153,12 @@ export async function createUser(
         [user.rows[0].id, organizationId, input.branchId ?? null],
       );
     }
-    return { ...user.rows[0], roles: [input.role], enrollment_no: enrollmentNo };
+    return { ...user.rows[0], id: user.rows[0].id, roles: [input.role], enrollment_no: enrollmentNo };
   }).then((created) => {
     if (input.role === 'student') {
       void notificationService.notifyUserInApp(
         created.id as string,
-        'Welcome to EduTech',
+        'Welcome to Edumatra',
         created.enrollment_no
           ? `Your student account is ready. Enrollment No: ${created.enrollment_no}. Start exploring My Tests.`
           : 'Your student account is ready. Start exploring My Tests.',
@@ -208,8 +216,9 @@ export async function updateUser(
       const role = await client.query(`SELECT id FROM roles WHERE name = $1`, [input.role]);
       if (!role.rows[0]) throw new NotFoundError('Role');
       await client.query(
-        `DELETE FROM user_roles ur USING roles r
-         WHERE ur.role_id = r.id AND ur.user_id = $1
+        `DELETE ur FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         WHERE ur.user_id = $1
            AND r.name IN ('student', 'teacher', 'org_admin', 'staff')`,
         [userId],
       );
@@ -340,10 +349,10 @@ export async function revokeRole(userId: string, roleName: string, organizationI
     throw new ForbiddenError('Cannot revoke this role');
   }
   await query(
-    `DELETE FROM user_roles ur
-     USING roles r, users u
-     WHERE ur.role_id = r.id AND ur.user_id = u.id
-       AND ur.user_id = $1 AND r.name = $2 AND u.organization_id = $3`,
+    `DELETE ur FROM user_roles ur
+     JOIN roles r ON ur.role_id = r.id
+     JOIN users u ON ur.user_id = u.id
+     WHERE ur.user_id = $1 AND r.name = $2 AND u.organization_id = $3`,
     [userId, roleName, organizationId],
   );
   return { message: 'Role revoked' };
