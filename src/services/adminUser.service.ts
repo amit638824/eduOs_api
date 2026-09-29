@@ -7,6 +7,20 @@ import * as notificationService from './notification.service.js';
 
 const ALLOWED_ASSIGN_ROLES = new Set(['student', 'teacher', 'org_admin', 'staff']);
 
+function parseJsonArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (value == null || value === '') return [];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 async function assertBranchInOrg(branchId: string | undefined, organizationId: string) {
   if (!branchId) return;
   const branch = await query<{ organization_id: string }>(
@@ -45,11 +59,15 @@ export async function listUsers(
       `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
               st.admission_no AS enrollment_no,
               COALESCE(
-                (SELECT CAST(CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.name), ']') AS JSON)
+                (SELECT CONCAT(
+                   '[',
+                   GROUP_CONCAT(CONCAT('"', REPLACE(r.name, '"', '\\"'), '"') ORDER BY r.name SEPARATOR ','),
+                   ']'
+                 )
                  FROM user_roles ur
                  JOIN roles r ON r.id = ur.role_id
                  WHERE ur.user_id = u.id),
-                JSON_ARRAY()
+                '[]'
               ) AS roles
        FROM users u
        LEFT JOIN students st ON st.user_id = u.id
@@ -61,7 +79,10 @@ export async function listUsers(
   ]);
   const total = count.rows[0].total as number;
   return {
-    data: data.rows,
+    data: data.rows.map((row) => ({
+      ...row,
+      roles: parseJsonArray(row.roles),
+    })),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   } satisfies PaginatedResult<unknown>;
 }
@@ -71,11 +92,15 @@ export async function getUser(userId: string, organizationId: string) {
     `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
             st.admission_no AS enrollment_no,
             COALESCE(
-              (SELECT CAST(CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.name), ']') AS JSON)
+              (SELECT CONCAT(
+                 '[',
+                 GROUP_CONCAT(CONCAT('"', REPLACE(r.name, '"', '\\"'), '"') ORDER BY r.name SEPARATOR ','),
+                 ']'
+               )
                FROM user_roles ur
                JOIN roles r ON r.id = ur.role_id
                WHERE ur.user_id = u.id),
-              JSON_ARRAY()
+              '[]'
             ) AS roles
      FROM users u
      LEFT JOIN students st ON st.user_id = u.id
@@ -83,7 +108,7 @@ export async function getUser(userId: string, organizationId: string) {
     [userId, organizationId],
   );
   if (!result.rows[0]) throw new NotFoundError('User');
-  return result.rows[0];
+  return { ...result.rows[0], roles: parseJsonArray(result.rows[0].roles) };
 }
 
 export async function previewEnrollmentNumber(organizationId: string) {

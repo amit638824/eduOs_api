@@ -105,8 +105,12 @@ function translatePgSyntax(sql: string): string {
     '',
   );
   s = s.replace(/(\w+)\s*\|\|\s*(\$\d+)/g, (_m, col: string, placeholder: string) => {
-    return `JSON_MERGE_PATCH(IFNULL(${col}, CAST('{}' AS JSON)), CAST(${placeholder} AS JSON))`;
+    // Avoid CAST(... AS JSON) — unsupported on MariaDB < 10.5
+    return `JSON_MERGE_PATCH(IFNULL(${col}, '{}'), ${placeholder})`;
   });
+  // MariaDB < 10.5: JSON_ARRAY() / CAST(x AS JSON) are unavailable or limited
+  s = s.replace(/\bJSON_ARRAY\s*\(\s*\)/gi, `'[]'`);
+  s = s.replace(/\bCAST\s*\(([^()]+|\([^()]*\))\s+AS\s+JSON\s*\)/gi, '$1');
   s = s.replace(/(?<![`])\brank\b(?![`\w])/gi, '`rank`');
   return s;
 }

@@ -7,6 +7,10 @@ import { compileMysqlSql } from '../config/database.js';
 const PG_LEFTOVERS =
   /\bILIKE\b|\bRETURNING\b|\bON CONFLICT\b|\bEXCLUDED\b|\bFILTER\s*\(|\bDISTINCT ON\b|\bLATERAL\b|::[a-z]|INTERVAL\s+'|NOW\(\)\s*\+/i;
 
+/** MariaDB < 10.5 does not support these (XAMPP common case). */
+const MARIADB_UNSAFE =
+  /\bJSON_ARRAYAGG\b|\bJSON_OBJECTAGG\b|\bCAST\s*\([^)]*\s+AS\s+JSON\s*\)|\bJSON_ARRAY\s*\(\s*\)/i;
+
 const samples: { name: string; sql: string; params?: unknown[] }[] = [
   {
     name: 'interval days',
@@ -65,6 +69,15 @@ const samples: { name: string; sql: string; params?: unknown[] }[] = [
     params: ['id', '{"a":1}'],
   },
   {
+    name: 'empty json array fallback',
+    sql: `SELECT COALESCE(JSON_ARRAY(), '[]') AS roles`,
+  },
+  {
+    name: 'cast as json strip',
+    sql: `SELECT CAST(content AS JSON) AS content FROM questions WHERE id = $1`,
+    params: ['q'],
+  },
+  {
     name: 'status cast',
     sql: `UPDATE tests SET status = $3::test_status, scheduled_start = $4::timestamptz
           WHERE id = $1 AND organization_id = $2 AND status IN ('draft', 'scheduled')
@@ -116,21 +129,35 @@ let failed = 0;
 for (const sample of samples) {
   const compiled = compileMysqlSql(sample.sql, sample.params);
   const leftover = PG_LEFTOVERS.exec(compiled.sql);
+  const mariadbUnsafe = MARIADB_UNSAFE.exec(compiled.sql);
   const okInterval =
     !sample.name.startsWith('interval') || /DATE_ADD\(NOW\(\), INTERVAL \d+ (DAY|HOUR|MINUTE)\)/.test(compiled.sql);
   const okIgnore = sample.name !== 'on conflict do nothing' || /INSERT IGNORE INTO/i.test(compiled.sql);
   const okDup = !sample.name.includes('upsert') || /ON DUPLICATE KEY UPDATE/i.test(compiled.sql);
-  const okJson = sample.name !== 'json merge' || /JSON_MERGE_PATCH/i.test(compiled.sql);
+  const okJson =
+    sample.name !== 'json merge' ||
+    (/JSON_MERGE_PATCH/i.test(compiled.sql) && !/CAST\s*\(.*AS\s+JSON/i.test(compiled.sql));
   const okRank = !sample.name.includes('rank') || compiled.sql.includes('`rank`');
+  const okEmptyArr =
+    sample.name !== 'empty json array fallback' || !/\bJSON_ARRAY\s*\(/i.test(compiled.sql);
+  const okCastJson =
+    sample.name !== 'cast as json strip' || !/\bCAST\s*\(.*AS\s+JSON/i.test(compiled.sql);
 
-  if (leftover || !okInterval || !okIgnore || !okDup || !okJson || !okRank) {
+  if (leftover || mariadbUnsafe || !okInterval || !okIgnore || !okDup || !okJson || !okRank || !okEmptyArr || !okCastJson) {
     failed += 1;
     console.error(`FAIL ${sample.name}`);
     console.error('  sql:', compiled.sql.replace(/\s+/g, ' ').trim());
     if (leftover) console.error('  leftover:', leftover[0]);
+    if (mariadbUnsafe) console.error('  mariadb-unsafe:', mariadbUnsafe[0]);
   } else {
     console.log(`ok   ${sample.name}`);
-    if (sample.name.startsWith('interval') || sample.name.includes('conflict') || sample.name === 'json merge') {
+    if (
+      sample.name.startsWith('interval') ||
+      sample.name.includes('conflict') ||
+      sample.name === 'json merge' ||
+      sample.name.startsWith('empty') ||
+      sample.name.startsWith('cast')
+    ) {
       console.log('     ', compiled.sql.replace(/\s+/g, ' ').trim());
     }
   }

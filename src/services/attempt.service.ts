@@ -428,24 +428,7 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
   const questions = await query(
     `SELECT aa.question_id, q.type, q.content,
             COALESCE(tq.marks_override, q.marks) AS marks,
-            aa.answer, aa.is_correct, aa.marks_awarded, tq.sort_order,
-            COALESCE(
-              (
-                SELECT JSON_ARRAYAGG(JSON_OBJECT(
-                  'id', qo.id,
-                  'content', CAST(qo.content AS JSON),
-                  'is_correct', qo.is_correct,
-                  'sort_order', qo.sort_order
-                ))
-                FROM (
-                  SELECT id, content, is_correct, sort_order
-                  FROM question_options
-                  WHERE question_id = q.id
-                  ORDER BY sort_order, id
-                ) qo
-              ),
-              JSON_ARRAY()
-            ) AS options
+            aa.answer, aa.is_correct, aa.marks_awarded, tq.sort_order
      FROM attempt_answers aa
      JOIN questions q ON q.id = aa.question_id
      JOIN test_attempts ta ON ta.id = aa.attempt_id
@@ -455,7 +438,50 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
     [attemptId],
   );
 
-  return { ...result.rows[0], questions: questions.rows };
+  const questionIds = questions.rows.map((q) => q.question_id as string).filter(Boolean);
+  const optionsByQuestion = new Map<string, Record<string, unknown>[]>();
+  if (questionIds.length > 0) {
+    const placeholders = questionIds.map((_, i) => `$${i + 1}`).join(', ');
+    const options = await query<{
+      question_id: string;
+      id: string;
+      content: unknown;
+      is_correct: boolean | number;
+      sort_order: number;
+    }>(
+      `SELECT question_id, id, content, is_correct, sort_order
+       FROM question_options
+       WHERE question_id IN (${placeholders})
+       ORDER BY sort_order, id`,
+      questionIds,
+    );
+    for (const opt of options.rows) {
+      const list = optionsByQuestion.get(opt.question_id) ?? [];
+      let content = opt.content;
+      if (typeof content === 'string') {
+        try {
+          content = JSON.parse(content);
+        } catch {
+          content = { text: content };
+        }
+      }
+      list.push({
+        id: opt.id,
+        content,
+        is_correct: Boolean(opt.is_correct),
+        sort_order: opt.sort_order,
+      });
+      optionsByQuestion.set(opt.question_id, list);
+    }
+  }
+
+  return {
+    ...result.rows[0],
+    questions: questions.rows.map((q) => ({
+      ...q,
+      options: optionsByQuestion.get(q.question_id as string) ?? [],
+    })),
+  };
 }
 
 export async function listAttempts(
