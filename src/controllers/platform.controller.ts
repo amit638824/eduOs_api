@@ -471,8 +471,16 @@ export async function exportTestReport(req: Request, res: Response, next: NextFu
   try {
     const { testId } = vParams(req) as { testId: string };
     const { orgId } = await orgContext(req);
+    const format = String(req.query.format ?? 'csv').toLowerCase();
+    if (format === 'pdf') {
+      const pdf = await reportService.exportTestReportPdf(testId, orgId);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="test-report-${testId}.pdf"`);
+      res.send(pdf);
+      return;
+    }
     const csv = await reportService.exportTestReportCsv(testId, orgId);
-    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="test-report-${testId}.csv"`);
     res.send(csv);
   } catch (e) {

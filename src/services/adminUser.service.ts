@@ -45,11 +45,10 @@ export async function listUsers(
       `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
               st.admission_no AS enrollment_no,
               COALESCE(
-                (SELECT JSON_ARRAYAGG(sr.name)
-                 FROM (SELECT DISTINCT r.name AS name
-                       FROM user_roles ur
-                       JOIN roles r ON r.id = ur.role_id
-                       WHERE ur.user_id = u.id) sr),
+                (SELECT CAST(CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.name), ']') AS JSON)
+                 FROM user_roles ur
+                 JOIN roles r ON r.id = ur.role_id
+                 WHERE ur.user_id = u.id),
                 JSON_ARRAY()
               ) AS roles
        FROM users u
@@ -72,11 +71,10 @@ export async function getUser(userId: string, organizationId: string) {
     `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
             st.admission_no AS enrollment_no,
             COALESCE(
-              (SELECT JSON_ARRAYAGG(sr.name)
-               FROM (SELECT DISTINCT r.name AS name
-                     FROM user_roles ur
-                     JOIN roles r ON r.id = ur.role_id
-                     WHERE ur.user_id = u.id) sr),
+              (SELECT CAST(CONCAT('[', GROUP_CONCAT(DISTINCT JSON_QUOTE(r.name) ORDER BY r.name), ']') AS JSON)
+               FROM user_roles ur
+               JOIN roles r ON r.id = ur.role_id
+               WHERE ur.user_id = u.id),
               JSON_ARRAY()
             ) AS roles
      FROM users u

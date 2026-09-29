@@ -28,6 +28,7 @@ import {
   listAttemptsQuerySchema,
 } from '../validators/schemas.js';
 import * as examController from '../controllers/examination.controller.js';
+import * as certificateController from '../controllers/certificate.controller.js';
 
 const subjectIdParam = z.object({ subjectId: z.string().uuid() });
 const chapterIdParam = z.object({ chapterId: z.string().uuid() });
@@ -68,10 +69,33 @@ router.patch('/questions/:id', validate(uuidParamSchema, 'params'), validate(upd
 router.delete('/questions/:id', validate(uuidParamSchema, 'params'), requirePermission('question', 'delete'), examController.deleteQuestion);
 router.post('/questions/:id/approve', validate(uuidParamSchema, 'params'), requirePermission('question', 'approve'), examController.approveQuestion);
 
+// Certificates (authenticated)
+router.get('/certificates/mine', requirePermission('certificate', 'read'), certificateController.listMyCertificates);
+router.get('/certificates', requirePermission('certificate', 'read'), certificateController.listCertificates);
+router.get('/certificates/:id', validate(uuidParamSchema, 'params'), requirePermission('certificate', 'read'), certificateController.getCertificate);
+router.get('/certificates/:id/pdf', validate(uuidParamSchema, 'params'), requirePermission('certificate', 'export'), certificateController.downloadCertificatePdf);
+router.post(
+  '/results/:resultId/certificate',
+  validate(z.object({ resultId: z.string().uuid() }), 'params'),
+  requirePermission('certificate', 'create'),
+  certificateController.issueCertificate,
+);
+router.post(
+  '/certificates/:id/revoke',
+  validate(uuidParamSchema, 'params'),
+  requirePermission('certificate', 'revoke'),
+  certificateController.revokeCertificate,
+);
+
 // Tests
 router.get('/tests', validate(listTestsQuerySchema, 'query'), requirePermission('test', 'read'), examController.listTests);
 router.get('/students', validate(paginationSchema, 'query'), requirePermission('test', 'assign'), examController.listAssignableStudents);
 router.get('/tests/my', requirePermission('test', 'read'), examController.listMyTests);
+router.get(
+  '/assignments/summary',
+  requirePermission('test', 'read'),
+  examController.listAssignmentSummaries,
+);
 router.get('/tests/:id', validate(uuidParamSchema, 'params'), requirePermission('test', 'read'), examController.getTest);
 router.post('/tests', validate(createTestSchema), requirePermission('test', 'create'), examController.createTest);
 router.patch('/tests/:id', validate(uuidParamSchema, 'params'), validate(updateTestSchema), requirePermission('test', 'update'), examController.updateTest);

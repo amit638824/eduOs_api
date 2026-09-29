@@ -38,6 +38,7 @@
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.24.4",
     "nodemailer": "^9.0.3",
+    "pdfkit": "^0.20.2",
     "razorpay": "^2.9.6",
     "uuid": "^11.1.0",
     "zod": "^3.25.28"
@@ -51,6 +52,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.15.21",
     "@types/nodemailer": "^8.0.1",
+    "@types/pdfkit": "^0.17.6",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

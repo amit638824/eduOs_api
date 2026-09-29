@@ -85,6 +85,10 @@ INSERT INTO permissions (resource, action, description) VALUES
   ('analytics', 'read', 'View analytics'),
   ('report', 'read', 'View reports'),
   ('report', 'export', 'Export reports'),
+  ('certificate', 'read', 'View certificates'),
+  ('certificate', 'create', 'Issue certificates'),
+  ('certificate', 'revoke', 'Revoke certificates'),
+  ('certificate', 'export', 'Download certificate PDF'),
   ('payment', 'read', 'View payments'),
   ('payment', 'manage', 'Manage payments'),
   ('settings', 'read', 'View settings'),
@@ -101,7 +105,7 @@ SELECT r.id, p.id FROM roles r
 JOIN permissions p ON p.resource IN (
   'organization', 'branch', 'department', 'user', 'role', 'permission',
   'subject', 'topic', 'question', 'test',
-  'attempt', 'result', 'analytics', 'report', 'settings', 'audit_log', 'payment'
+  'attempt', 'result', 'analytics', 'report', 'certificate', 'settings', 'audit_log', 'payment'
 ) AND NOT (p.resource = 'organization' AND p.action = 'verify')
 WHERE r.name = 'org_admin'
 ON DUPLICATE KEY UPDATE role_id = role_id;
@@ -116,6 +120,7 @@ JOIN permissions p ON (
   OR (p.resource = 'department' AND p.action IN ('create', 'read', 'update'))
   OR (p.resource IN ('organization', 'branch') AND p.action = 'read')
   OR (p.resource IN ('result', 'analytics', 'report') AND p.action IN ('read', 'export'))
+  OR (p.resource = 'certificate' AND p.action IN ('read', 'create', 'export', 'revoke'))
   OR (p.resource = 'attempt' AND p.action IN ('read', 'manage'))
   OR (p.resource = 'settings' AND p.action = 'read')
 ) WHERE r.name = 'staff'
@@ -130,6 +135,7 @@ JOIN permissions p ON (
   OR (p.resource = 'department' AND p.action = 'read')
   OR (p.resource IN ('organization', 'branch') AND p.action = 'read')
   OR (p.resource IN ('result', 'analytics', 'report') AND p.action = 'read')
+  OR (p.resource = 'certificate' AND p.action IN ('read', 'create', 'export'))
 ) WHERE r.name = 'teacher'
 ON DUPLICATE KEY UPDATE role_id = role_id;
 
@@ -139,6 +145,7 @@ JOIN permissions p ON (
   (p.resource = 'test' AND p.action = 'read')
   OR (p.resource = 'attempt' AND p.action IN ('read', 'manage'))
   OR (p.resource = 'result' AND p.action = 'read')
+  OR (p.resource = 'certificate' AND p.action IN ('read', 'create', 'export'))
 ) WHERE r.name = 'student'
 ON DUPLICATE KEY UPDATE role_id = role_id;
 

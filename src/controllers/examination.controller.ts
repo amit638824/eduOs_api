@@ -368,6 +368,16 @@ export async function listMyTests(req: Request, res: Response, next: NextFunctio
   }
 }
 
+export async function listAssignmentSummaries(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const data = await testService.listAssignmentSummaries(orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function startAttempt(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);

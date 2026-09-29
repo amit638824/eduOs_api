@@ -470,6 +470,7 @@ export async function listStudentAssignedTests(studentId: string, organizationId
   const result = await query(
     `SELECT t.id, t.title, t.description, t.status, t.duration_minutes,
             t.passing_marks, t.published_at, t.scheduled_start, t.scheduled_end,
+            t.total_marks,
             ta_assign.scheduled_at,
             latest.id AS attempt_id,
             latest.status AS attempt_status,
@@ -495,6 +496,27 @@ export async function listStudentAssignedTests(studentId: string, organizationId
        AND t.archived_at IS NULL
      ORDER BY (t.published_at IS NULL), t.published_at DESC`,
     [studentId, organizationId],
+  );
+  return result.rows;
+}
+
+/** Teacher/admin view: tests with assignment & submission counts */
+export async function listAssignmentSummaries(organizationId: string) {
+  await activateDueScheduledTests(organizationId);
+  const result = await query(
+    `SELECT t.id, t.title, t.status, t.total_marks, t.duration_minutes,
+            t.scheduled_start, t.scheduled_end, t.published_at,
+            COUNT(DISTINCT ta.id)::int AS assigned_count,
+            COUNT(DISTINCT att.id)::int AS attempt_count,
+            COUNT(DISTINCT CASE WHEN att.status IN ('submitted', 'auto_submitted') THEN att.id END)::int AS submitted_count
+     FROM tests t
+     LEFT JOIN test_assignments ta ON ta.test_id = t.id AND ta.assignee_type = 'student'
+     LEFT JOIN test_attempts att ON att.test_id = t.id
+     WHERE t.organization_id = $1 AND t.archived_at IS NULL
+     GROUP BY t.id, t.title, t.status, t.total_marks, t.duration_minutes,
+              t.scheduled_start, t.scheduled_end, t.published_at, t.created_at
+     ORDER BY t.created_at DESC`,
+    [organizationId],
   );
   return result.rows;
 }
