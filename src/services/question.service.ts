@@ -3,6 +3,31 @@ import { ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { recalcTestsForQuestion } from './test.service.js';
 
+function parseJsonField(value: unknown): unknown {
+  if (value == null || typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeQuestionRow<T extends Record<string, unknown>>(row: T): T {
+  return {
+    ...row,
+    content: parseJsonField(row.content),
+  };
+}
+
+function normalizeOptionRow<T extends Record<string, unknown>>(row: T): T {
+  return {
+    ...row,
+    content: parseJsonField(row.content),
+  };
+}
+
 export interface QuestionOptionInput {
   content: Record<string, unknown>;
   isCorrect: boolean;
@@ -62,7 +87,7 @@ export async function listQuestions(
   ]);
   const total = count.rows[0].total as number;
   return {
-    data: data.rows,
+    data: data.rows.map((row) => normalizeQuestionRow(row as Record<string, unknown>)),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   } satisfies PaginatedResult<unknown>;
 }
@@ -88,7 +113,10 @@ export async function getQuestionById(id: string, organizationId: string) {
     [id],
   );
 
-  return { ...question.rows[0], options: options.rows };
+  return {
+    ...normalizeQuestionRow(question.rows[0] as Record<string, unknown>),
+    options: options.rows.map((row) => normalizeOptionRow(row as Record<string, unknown>)),
+  };
 }
 
 export async function createQuestion(

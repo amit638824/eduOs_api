@@ -38,6 +38,16 @@ function baseConnConfig() {
         if (value === null) return null;
         return value === '1';
       }
+      // MariaDB often returns JSON columns as strings; parse so clients get objects.
+      if (field.type === 'JSON') {
+        const value = field.string();
+        if (value == null) return null;
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
       return next();
     },
   };

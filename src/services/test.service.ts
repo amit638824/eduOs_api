@@ -75,7 +75,19 @@ export async function getTestById(id: string, organizationId: string) {
   return {
     ...test.rows[0],
     sections: sections.rows,
-    questions: questions.rows,
+    questions: questions.rows.map((row) => ({
+      ...row,
+      content:
+        typeof row.content === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(row.content);
+              } catch {
+                return row.content;
+              }
+            })()
+          : row.content,
+    })),
     assignments,
   };
 }

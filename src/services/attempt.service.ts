@@ -1,8 +1,128 @@
-import { query, withTransaction } from '../config/database.js';
+import { query, withTransaction, type DbClient } from '../config/database.js';
 import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { parseExamConfig, seededShuffle } from '../utils/examConfig.js';
+import { asJsonObject, parseJsonField } from '../utils/json.js';
 import * as notificationService from './notification.service.js';
+
+function optionContent(raw: unknown): { text?: string; value?: number } {
+  const parsed = parseJsonField(raw);
+  if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as { text?: string; value?: number };
+  }
+  if (typeof parsed === 'string') return { text: parsed };
+  return {};
+}
+
+function isTruthyFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1';
+}
+
+/** Grade stored attempt_answers and return score summary. */
+async function gradeAttemptAnswers(
+  client: DbClient,
+  attemptId: string,
+  testId: string,
+  defaultNegative: number,
+) {
+  const answers = await client.query(
+    `SELECT aa.question_id, aa.answer, q.type,
+            COALESCE(tq.marks_override, q.marks) AS marks,
+            q.negative_marks
+     FROM attempt_answers aa
+     JOIN questions q ON q.id = aa.question_id
+     JOIN test_questions tq ON tq.test_id = $2 AND tq.question_id = aa.question_id
+     WHERE aa.attempt_id = $1`,
+    [attemptId, testId],
+  );
+
+  let totalScore = 0;
+  let maxScore = 0;
+  let correct = 0;
+  let total = 0;
+
+  for (const row of answers.rows) {
+    const marks = Number(row.marks);
+    maxScore += marks;
+    total += 1;
+
+    const optionsResult = await client.query(
+      `SELECT id, is_correct, content FROM question_options WHERE question_id = $1`,
+      [row.question_id],
+    );
+    const correctIds = optionsResult.rows
+      .filter((o) => isTruthyFlag(o.is_correct))
+      .map((o) => String(o.id));
+
+    const answer = asJsonObject(row.answer) ?? {};
+    const selectedRaw = answer.selectedOptionIds;
+    const selected = Array.isArray(selectedRaw) ? selectedRaw.map(String) : [];
+    const answerText = typeof answer.text === 'string' ? answer.text : '';
+    const answerValue = answer.value;
+
+    let isCorrect = false;
+    let marksAwarded = 0;
+    const type = String(row.type);
+
+    if (type === 'mcq' || type === 'true_false') {
+      isCorrect =
+        selected.length === 1 &&
+        correctIds.length === 1 &&
+        selected[0] === correctIds[0];
+    } else if (type === 'msq') {
+      const selectedSet = new Set(selected);
+      const correctSet = new Set(correctIds);
+      isCorrect =
+        selectedSet.size === correctSet.size &&
+        [...correctSet].every((id) => selectedSet.has(id));
+    } else if (type === 'fill_blank') {
+      const correctOpt = optionsResult.rows.find((o) => isTruthyFlag(o.is_correct));
+      const expected = optionContent(correctOpt?.content).text?.trim().toLowerCase() ?? '';
+      const given = answerText.trim().toLowerCase();
+      isCorrect = expected.length > 0 && given === expected;
+    } else if (type === 'integer' || type === 'numerical') {
+      const correctOpt = optionsResult.rows.find((o) => isTruthyFlag(o.is_correct));
+      const content = optionContent(correctOpt?.content);
+      const expected = Number(content.value ?? content.text);
+      const given = Number(answerValue);
+      if (type === 'integer') {
+        isCorrect = Number.isInteger(given) && given === expected;
+      } else {
+        isCorrect =
+          !Number.isNaN(given) && !Number.isNaN(expected) && Math.abs(given - expected) < 0.01;
+      }
+    }
+
+    const hasResponse =
+      selected.length > 0 ||
+      answerText.trim() !== '' ||
+      (answerValue != null && String(answerValue) !== '');
+
+    if (isCorrect) {
+      marksAwarded = marks;
+      correct += 1;
+    } else if (hasResponse) {
+      const neg = Number(row.negative_marks) || defaultNegative;
+      if (neg > 0) marksAwarded = -neg;
+    }
+
+    totalScore += marksAwarded;
+    await client.query(
+      `UPDATE attempt_answers SET is_correct = $3, marks_awarded = $4 WHERE attempt_id = $1 AND question_id = $2`,
+      [attemptId, row.question_id, isCorrect, marksAwarded],
+    );
+  }
+
+  const maxFromTest = await client.query(
+    `SELECT COALESCE(total_marks, 0) AS total FROM tests WHERE id = $1`,
+    [testId],
+  );
+  maxScore = Number(maxFromTest.rows[0]?.total) || maxScore;
+  const percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+  const accuracy = total > 0 ? (correct / total) * 100 : 0;
+
+  return { totalScore, maxScore, percentage, accuracy, correct, total };
+}
 
 export async function getStudentIdByUserId(userId: string): Promise<string> {
   const result = await query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
@@ -159,7 +279,12 @@ export async function getAttemptForStudent(attemptId: string, studentId: string)
     }
     return {
       ...q,
-      options: opts.map((o) => ({ id: o.id, content: o.content, sort_order: o.sort_order })),
+      content: parseJsonField(q.content) ?? q.content,
+      answer: asJsonObject(q.answer),
+      options: opts.map((o) => {
+        const optContent = optionContent(o.content);
+        return { id: o.id, content: optContent, sort_order: o.sort_order };
+      }),
     };
   });
 
@@ -214,9 +339,11 @@ export async function saveAnswer(
      ON CONFLICT (attempt_id, question_id)
      DO UPDATE SET answer = EXCLUDED.answer, answered_at = NOW()
      RETURNING id, question_id, answer, answered_at`,
-    [attemptId, questionId, JSON.stringify(answer)],
+    [attemptId, questionId, answer],
   );
-  return result.rows[0];
+  const rowOut = result.rows[0];
+  if (!rowOut) return rowOut;
+  return { ...rowOut, answer: asJsonObject(rowOut.answer) ?? rowOut.answer };
 }
 
 export async function logProctoringEvent(
@@ -267,91 +394,13 @@ export async function submitAttempt(
 
     const examConfig = parseExamConfig(attempt.rows[0].config);
     const defaultNegative = examConfig.negativeMarking ? 0.25 : 0;
-
-    const answers = await client.query(
-      `SELECT aa.question_id, aa.answer, q.type,
-              COALESCE(tq.marks_override, q.marks) AS marks,
-              q.negative_marks
-       FROM attempt_answers aa
-       JOIN questions q ON q.id = aa.question_id
-       JOIN test_attempts ta ON ta.id = aa.attempt_id
-       JOIN test_questions tq ON tq.test_id = ta.test_id AND tq.question_id = aa.question_id
-       WHERE aa.attempt_id = $1`,
-      [attemptId],
+    const graded = await gradeAttemptAnswers(
+      client,
+      attemptId,
+      attempt.rows[0].test_id as string,
+      defaultNegative,
     );
-
-    let totalScore = 0;
-    let maxScore = 0;
-    let correct = 0;
-    let total = 0;
-
-    for (const row of answers.rows) {
-      const marks = Number(row.marks);
-      maxScore += marks;
-      total += 1;
-
-      const optionsResult = await client.query(
-        `SELECT id, is_correct, content FROM question_options WHERE question_id = $1`,
-        [row.question_id],
-      );
-      const correctIds = optionsResult.rows.filter((o) => o.is_correct).map((o) => o.id);
-      const answer = row.answer as { selectedOptionIds?: string[] } | null;
-      const selected = answer?.selectedOptionIds ?? [];
-
-      let isCorrect = false;
-      let marksAwarded = 0;
-
-      if (row.type === 'mcq' || row.type === 'true_false') {
-        isCorrect =
-          selected.length === 1 &&
-          correctIds.length === 1 &&
-          selected[0] === correctIds[0];
-      } else if (row.type === 'msq') {
-        const selectedSet = new Set(selected);
-        const correctSet = new Set(correctIds);
-        isCorrect =
-          selectedSet.size === correctSet.size &&
-          [...correctSet].every((id) => selectedSet.has(id));
-      } else if (row.type === 'fill_blank') {
-        const ans = row.answer as { text?: string } | null;
-        const correctOpt = optionsResult.rows.find((o) => o.is_correct);
-        const expected = (correctOpt?.content as { text?: string })?.text?.trim().toLowerCase() ?? '';
-        const given = ans?.text?.trim().toLowerCase() ?? '';
-        isCorrect = expected.length > 0 && given === expected;
-      } else if (row.type === 'integer' || row.type === 'numerical') {
-        const ans = row.answer as { value?: number | string } | null;
-        const correctOpt = optionsResult.rows.find((o) => o.is_correct);
-        const expected = Number((correctOpt?.content as { value?: number })?.value);
-        const given = Number(ans?.value);
-        if (row.type === 'integer') {
-          isCorrect = Number.isInteger(given) && given === expected;
-        } else {
-          isCorrect = !Number.isNaN(given) && !Number.isNaN(expected) && Math.abs(given - expected) < 0.01;
-        }
-      }
-
-      if (isCorrect) {
-        marksAwarded = marks;
-        correct += 1;
-      } else if (selected.length > 0 || row.type === 'fill_blank' || row.type === 'integer' || row.type === 'numerical') {
-        const neg = Number(row.negative_marks) || defaultNegative;
-        if (neg > 0) marksAwarded = -neg;
-      }
-
-      totalScore += marksAwarded;
-      await client.query(
-        `UPDATE attempt_answers SET is_correct = $3, marks_awarded = $4 WHERE attempt_id = $1 AND question_id = $2`,
-        [attemptId, row.question_id, isCorrect, marksAwarded],
-      );
-    }
-
-    const maxFromTest = await client.query(
-      `SELECT COALESCE(total_marks, 0) AS total FROM tests WHERE id = $1`,
-      [attempt.rows[0].test_id],
-    );
-    maxScore = Number(maxFromTest.rows[0]?.total) || maxScore;
-    const percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
-    const accuracy = total > 0 ? (correct / total) * 100 : 0;
+    const { totalScore, maxScore, percentage, accuracy } = graded;
 
     const finalStatus = autoSubmit ? 'auto_submitted' : 'submitted';
     await client.query(
@@ -372,7 +421,7 @@ export async function submitAttempt(
         maxScore,
         percentage,
         accuracy,
-        JSON.stringify({ correct, total, autoSubmit }),
+        JSON.stringify({ correct: graded.correct, total: graded.total, autoSubmit }),
       ],
     );
 
@@ -415,7 +464,7 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
   const result = await query(
     `SELECT r.id, r.attempt_id, r.student_id, r.test_id, r.total_score, r.max_score,
             r.percentage, r.accuracy, r.rank, r.percentile, r.analysis, r.created_at,
-            t.title AS test_title, t.passing_marks, u.first_name, u.last_name
+            t.title AS test_title, t.passing_marks, t.config, u.first_name, u.last_name
      FROM results r
      JOIN tests t ON t.id = r.test_id
      JOIN students s ON s.id = r.student_id
@@ -424,6 +473,32 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
     [attemptId, organizationId],
   );
   if (!result.rows[0]) throw new NotFoundError('Result');
+
+  // Re-grade so MariaDB JSON-string answers (mis-graded earlier) get corrected on view.
+  const testId = String(result.rows[0].test_id);
+  const examConfig = parseExamConfig(result.rows[0].config);
+  const defaultNegative = examConfig.negativeMarking ? 0.25 : 0;
+  const graded = await withTransaction(async (client) => {
+    const summary = await gradeAttemptAnswers(client, attemptId, testId, defaultNegative);
+    await client.query(
+      `UPDATE results SET total_score = $2, max_score = $3, percentage = $4, accuracy = $5
+       WHERE attempt_id = $1`,
+      [attemptId, summary.totalScore, summary.maxScore, summary.percentage, summary.accuracy],
+    );
+    return summary;
+  });
+
+  const refreshed = await query(
+    `SELECT r.id, r.attempt_id, r.student_id, r.test_id, r.total_score, r.max_score,
+            r.percentage, r.accuracy, r.rank, r.percentile, r.analysis, r.created_at,
+            t.title AS test_title, t.passing_marks, u.first_name, u.last_name
+     FROM results r
+     JOIN tests t ON t.id = r.test_id
+     JOIN students s ON s.id = r.student_id
+     JOIN users u ON u.id = s.user_id
+     WHERE r.attempt_id = $1 AND t.organization_id = $2`,
+    [attemptId, organizationId],
+  );
 
   const questions = await query(
     `SELECT aa.question_id, q.type, q.content,
@@ -457,28 +532,31 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
     );
     for (const opt of options.rows) {
       const list = optionsByQuestion.get(opt.question_id) ?? [];
-      let content = opt.content;
-      if (typeof content === 'string') {
-        try {
-          content = JSON.parse(content);
-        } catch {
-          content = { text: content };
-        }
-      }
       list.push({
         id: opt.id,
-        content,
-        is_correct: Boolean(opt.is_correct),
+        content: optionContent(opt.content),
+        is_correct: isTruthyFlag(opt.is_correct),
         sort_order: opt.sort_order,
       });
       optionsByQuestion.set(opt.question_id, list);
     }
   }
 
-  return {
+  const head = refreshed.rows[0] ?? {
     ...result.rows[0],
+    total_score: graded.totalScore,
+    max_score: graded.maxScore,
+    percentage: graded.percentage,
+    accuracy: graded.accuracy,
+  };
+
+  return {
+    ...head,
     questions: questions.rows.map((q) => ({
       ...q,
+      content: parseJsonField(q.content) ?? q.content,
+      answer: asJsonObject(q.answer),
+      is_correct: isTruthyFlag(q.is_correct),
       options: optionsByQuestion.get(q.question_id as string) ?? [],
     })),
   };
