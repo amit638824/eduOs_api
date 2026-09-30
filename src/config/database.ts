@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import mysql from 'mysql2/promise';
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { env } from './env.js';
+import { normalizeJsonColumns, parseJsonField } from '../utils/json.js';
 
 export type DbRow = { [key: string]: any };
 
@@ -38,15 +39,11 @@ function baseConnConfig() {
         if (value === null) return null;
         return value === '1';
       }
-      // MariaDB often returns JSON columns as strings; parse so clients get objects.
+      // MariaDB may report JSON as JSON, or as string/blob aliases.
       if (field.type === 'JSON') {
         const value = field.string();
         if (value == null) return null;
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
+        return parseJsonField(value);
       }
       return next();
     },
@@ -69,7 +66,8 @@ function prepareParams(params: unknown[] = []): unknown[] {
   return params.map((value) => {
     if (value === undefined) return null;
     if (value instanceof Date || Buffer.isBuffer(value)) return value;
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    // Objects AND arrays (tags, proctoring_log, etc.) must be JSON text for MySQL JSON cols.
+    if (value !== null && typeof value === 'object') {
       return JSON.stringify(value);
     }
     return value;
@@ -191,8 +189,10 @@ async function rawQuery(
       ? await conn.query(converted.sql, converted.params)
       : await conn.query(converted.sql);
   if (Array.isArray(result)) {
-    const rows = result as RowDataPacket[];
-    return { rows: rows as unknown as Record<string, unknown>[], rowCount: rows.length };
+    const rows = (result as RowDataPacket[]).map((row) =>
+      normalizeJsonColumns(row as Record<string, unknown>),
+    );
+    return { rows, rowCount: rows.length };
   }
   const header = result as ResultSetHeader;
   return { rows: [], rowCount: header.affectedRows ?? 0 };

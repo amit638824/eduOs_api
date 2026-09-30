@@ -2,6 +2,7 @@ import { query, withTransaction } from '../config/database.js';
 import { ConflictError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { generateTempPassword, hashPassword } from '../utils/security.js';
+import { asJsonObject } from '../utils/json.js';
 
 export interface CreateOrganizationInput {
   name: string;
@@ -76,8 +77,8 @@ export async function createOrganization(
         input.name,
         input.slug,
         input.logoUrl ?? null,
-        JSON.stringify(input.theme ?? {}),
-        JSON.stringify(settings),
+        input.theme ?? {},
+        settings,
         isActive,
       ],
     );
@@ -172,11 +173,11 @@ export async function updateOrganization(
 ) {
   await getOrganizationById(id);
 
-  let settingsJson: string | null = null;
+  let settingsJson: Record<string, unknown> | null = null;
   if (input.settings || input.isActive !== undefined || input.contactEmail !== undefined) {
     const current = await getOrganizationById(id);
-    const merged = {
-      ...((current.settings as Record<string, unknown>) ?? {}),
+    const merged: Record<string, unknown> = {
+      ...(asJsonObject(current.settings) ?? {}),
       ...(input.settings ?? {}),
     };
     if (input.isActive === true) merged.verificationStatus = 'verified';
@@ -186,7 +187,7 @@ export async function updateOrganization(
       if (email) merged.contactEmail = email.toLowerCase();
       else delete merged.contactEmail;
     }
-    settingsJson = JSON.stringify(merged);
+    settingsJson = merged;
   }
 
   const result = await query(
@@ -205,9 +206,9 @@ export async function updateOrganization(
       input.name ?? null,
       input.slug ?? null,
       input.logoUrl ?? null,
-      input.theme ? JSON.stringify(input.theme) : null,
+      input.theme ?? null,
       settingsJson,
-      input.isActive === undefined ? null : input.isActive,
+      input.isActive ?? null,
     ],
   );
 
@@ -258,7 +259,7 @@ export async function getOrganizationNotifyEmails(organizationId: string): Promi
     if (row.email) emails.add(row.email.toLowerCase());
   }
 
-  const settings = org.rows[0]?.settings ?? {};
+  const settings = asJsonObject(org.rows[0]?.settings) ?? {};
   const contact = settings.contactEmail;
   if (typeof contact === 'string' && contact.includes('@')) {
     emails.add(contact.toLowerCase().trim());
@@ -277,7 +278,7 @@ export async function getOrganizationNotifyEmails(organizationId: string): Promi
 export async function verifyOrganization(id: string) {
   const org = await getOrganizationById(id);
   const settings = {
-    ...((org.settings as Record<string, unknown>) ?? {}),
+    ...(asJsonObject(org.settings) ?? {}),
     verificationStatus: 'verified',
     verifiedAt: new Date().toISOString(),
   };
@@ -289,7 +290,7 @@ export async function verifyOrganization(id: string) {
        updated_at = NOW()
      WHERE id = $1 AND deleted_at IS NULL
      RETURNING id, name, slug, logo_url, theme, settings, is_active, updated_at`,
-    [id, JSON.stringify(settings)],
+    [id, settings],
   );
 
   await query(
@@ -336,7 +337,7 @@ export async function createBranch(
       input.name,
       input.code ?? null,
       input.address ?? null,
-      JSON.stringify(input.settings ?? {}),
+      input.settings ?? {},
     ],
   );
 
@@ -414,7 +415,7 @@ export async function updateBranch(
       input.name ?? null,
       input.code ?? null,
       input.address ?? null,
-      input.settings ? JSON.stringify(input.settings) : null,
+      input.settings ?? null,
       input.isActive ?? null,
     ],
   );

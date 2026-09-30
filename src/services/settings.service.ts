@@ -5,8 +5,9 @@ export async function getSettings(organizationId: string, keys?: string[]) {
   const params: unknown[] = [organizationId];
   let where = 'organization_id = $1';
   if (keys?.length) {
-    params.push(keys);
-    where += ` AND \`key\` IN ($${params.length})`;
+    const placeholders = keys.map((_, i) => `$${params.length + i + 1}`).join(', ');
+    params.push(...keys);
+    where += ` AND \`key\` IN (${placeholders})`;
   }
   const result = await query(
     `SELECT id, organization_id, \`key\`, value, updated_at FROM settings WHERE ${where} ORDER BY \`key\``,
@@ -25,9 +26,16 @@ export async function upsertSetting(organizationId: string, key: string, value: 
      ON CONFLICT (organization_id, \`key\`)
      DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
      RETURNING id, organization_id, \`key\`, value, updated_at`,
-    [organizationId, key, JSON.stringify(value)],
+    [organizationId, key, toMysqlJsonParam(value)],
   );
   return result.rows[0];
+}
+
+/** Primitives must be JSON-encoded for JSON columns; objects/arrays go through prepareParams. */
+function toMysqlJsonParam(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value !== null && typeof value === 'object') return value;
+  return JSON.stringify(value);
 }
 
 export async function deleteSetting(organizationId: string, key: string) {

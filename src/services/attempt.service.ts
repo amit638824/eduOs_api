@@ -2,7 +2,7 @@ import { query, withTransaction, type DbClient } from '../config/database.js';
 import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { parseExamConfig, seededShuffle } from '../utils/examConfig.js';
-import { asJsonObject, parseJsonField } from '../utils/json.js';
+import { asJsonArray, asJsonObject, parseJsonField } from '../utils/json.js';
 import * as notificationService from './notification.service.js';
 
 function optionContent(raw: unknown): { text?: string; value?: number } {
@@ -144,8 +144,8 @@ function isExpired(startedAt: Date, durationMinutes: number): boolean {
 }
 
 function countTabSwitches(proctoringLog: unknown): number {
-  if (!Array.isArray(proctoringLog)) return 0;
-  return proctoringLog.filter((e) => (e as { event?: string })?.event === 'tab_switch').length;
+  const log = asJsonArray(proctoringLog);
+  return log.filter((e) => (e as { event?: string })?.event === 'tab_switch').length;
 }
 
 export async function startAttempt(testId: string, studentId: string, organizationId: string) {
@@ -361,13 +361,13 @@ export async function logProctoringEvent(
     throw new ConflictError('Attempt is not in progress');
   }
 
-  const log = Array.isArray(attempt.rows[0].proctoring_log) ? attempt.rows[0].proctoring_log : [];
+  const log = asJsonArray(attempt.rows[0].proctoring_log);
   const entry = { event, detail: detail ?? {}, at: new Date().toISOString() };
   const updated = [...log, entry];
 
   await query(`UPDATE test_attempts SET proctoring_log = $2, updated_at = NOW() WHERE id = $1`, [
     attemptId,
-    JSON.stringify(updated),
+    updated,
   ]);
 
   return { tab_switch_count: countTabSwitches(updated), log: entry };

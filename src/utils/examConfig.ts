@@ -1,3 +1,5 @@
+import { asJsonObject } from './json.js';
+
 export interface ExamSecurityConfig {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
@@ -23,7 +25,7 @@ export const DEFAULT_EXAM_CONFIG: ExamSecurityConfig = {
 };
 
 export function parseExamConfig(raw: unknown): ExamSecurityConfig {
-  const cfg = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const cfg = asJsonObject(raw) ?? {};
   return {
     shuffleQuestions: Boolean(cfg.shuffleQuestions ?? DEFAULT_EXAM_CONFIG.shuffleQuestions),
     shuffleOptions: Boolean(cfg.shuffleOptions ?? DEFAULT_EXAM_CONFIG.shuffleOptions),

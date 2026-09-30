@@ -120,8 +120,13 @@ const samples: { name: string; sql: string; params?: unknown[] }[] = [
   },
   {
     name: 'key in list',
-    sql: `SELECT id, \`key\`, value FROM settings WHERE organization_id = $1 AND \`key\` IN ($2)`,
-    params: ['org', ['a', 'b']],
+    sql: `SELECT id, \`key\`, value FROM settings WHERE organization_id = $1 AND \`key\` IN ($2, $3)`,
+    params: ['org', 'a', 'b'],
+  },
+  {
+    name: 'json array param',
+    sql: `UPDATE test_attempts SET proctoring_log = $2 WHERE id = $1`,
+    params: ['id', [{ event: 'tab_switch' }]],
   },
 ];
 
@@ -142,8 +147,24 @@ for (const sample of samples) {
     sample.name !== 'empty json array fallback' || !/\bJSON_ARRAY\s*\(/i.test(compiled.sql);
   const okCastJson =
     sample.name !== 'cast as json strip' || !/\bCAST\s*\(.*AS\s+JSON/i.test(compiled.sql);
+  const okArrParam =
+    sample.name !== 'json array param' ||
+    compiled.params.some(
+      (p) => typeof p === 'string' && String(p).includes('tab_switch'),
+    );
 
-  if (leftover || mariadbUnsafe || !okInterval || !okIgnore || !okDup || !okJson || !okRank || !okEmptyArr || !okCastJson) {
+  if (
+    leftover ||
+    mariadbUnsafe ||
+    !okInterval ||
+    !okIgnore ||
+    !okDup ||
+    !okJson ||
+    !okRank ||
+    !okEmptyArr ||
+    !okCastJson ||
+    !okArrParam
+  ) {
     failed += 1;
     console.error(`FAIL ${sample.name}`);
     console.error('  sql:', compiled.sql.replace(/\s+/g, ' ').trim());
@@ -156,9 +177,11 @@ for (const sample of samples) {
       sample.name.includes('conflict') ||
       sample.name === 'json merge' ||
       sample.name.startsWith('empty') ||
-      sample.name.startsWith('cast')
+      sample.name.startsWith('cast') ||
+      sample.name === 'json array param'
     ) {
       console.log('     ', compiled.sql.replace(/\s+/g, ' ').trim());
+      if (sample.name === 'json array param') console.log('     ', compiled.params);
     }
   }
 }

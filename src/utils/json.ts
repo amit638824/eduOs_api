@@ -27,3 +27,40 @@ export function asJsonObject(value: unknown): Record<string, unknown> | null {
   }
   return null;
 }
+
+export function asJsonArray(value: unknown): unknown[] {
+  const parsed = parseJsonField(value);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/** Known JSON column names across the schema — normalize on every SELECT. */
+export const JSON_COLUMN_KEYS = new Set([
+  'theme',
+  'settings',
+  'device_info',
+  'profile',
+  'tags',
+  'content',
+  'metadata',
+  'config',
+  'proctoring_log',
+  'answer',
+  'analysis',
+  'data',
+  'value',
+  'old_values',
+  'new_values',
+]);
+
+export function normalizeJsonColumns<T extends Record<string, unknown>>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const key of Object.keys(out)) {
+    if (!JSON_COLUMN_KEYS.has(key)) continue;
+    const v = out[key];
+    if (v == null) continue;
+    if (typeof v === 'string' || Buffer.isBuffer(v)) {
+      out[key] = parseJsonField(v);
+    }
+  }
+  return out as T;
+}
