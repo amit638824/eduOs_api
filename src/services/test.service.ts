@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors.js';
+import { NotFoundError, ConflictError, ForbiddenError, ValidationError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import * as notificationService from './notification.service.js';
 
@@ -32,7 +32,7 @@ export async function listTests(
   const [data, count] = await Promise.all([
     query(
       `SELECT id, title, description, status, duration_minutes, passing_marks, total_marks,
-              scheduled_start, scheduled_end, published_at, created_at, updated_at
+              instructions, config, scheduled_start, scheduled_end, published_at, created_at, updated_at
        FROM tests WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
@@ -107,23 +107,43 @@ export async function listTestAssignments(testId: string, organizationId: string
   return result.rows;
 }
 
-export async function listAssignableStudents(organizationId: string, page: number, limit: number) {
+export async function listAssignableStudents(
+  organizationId: string,
+  page: number,
+  limit: number,
+  departmentId?: string,
+) {
   const offset = (page - 1) * limit;
+  const params: unknown[] = [organizationId];
+  let where =
+    's.organization_id = $1 AND u.deleted_at IS NULL AND u.status = \'active\'';
+  if (departmentId) {
+    params.push(departmentId);
+    where += ` AND EXISTS (
+      SELECT 1 FROM departments d
+      WHERE d.id = $${params.length}
+        AND d.deleted_at IS NULL
+        AND d.branch_id = COALESCE(s.branch_id, u.branch_id)
+    )`;
+  }
+  params.push(limit, offset);
+
   const [data, count] = await Promise.all([
     query(
-      `SELECT s.id AS student_id, u.id AS user_id, u.email, u.first_name, u.last_name, u.status
+      `SELECT s.id AS student_id, u.id AS user_id, u.email, u.first_name, u.last_name, u.status,
+              COALESCE(s.branch_id, u.branch_id) AS branch_id
        FROM students s
        INNER JOIN users u ON u.id = s.user_id
-       WHERE s.organization_id = $1 AND u.deleted_at IS NULL AND u.status = 'active'
+       WHERE ${where}
        ORDER BY u.first_name, u.last_name
-       LIMIT $2 OFFSET $3`,
-      [organizationId, limit, offset],
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
     ),
     query(
       `SELECT COUNT(*)::int AS total FROM students s
        INNER JOIN users u ON u.id = s.user_id
-       WHERE s.organization_id = $1 AND u.deleted_at IS NULL AND u.status = 'active'`,
-      [organizationId],
+       WHERE ${where}`,
+      params.slice(0, -2),
     ),
   ]);
   const total = count.rows[0].total as number;
@@ -243,6 +263,29 @@ export async function removeQuestionFromTest(
   if (!result.rows[0]) throw new NotFoundError('Test question');
   await recalcTestTotalMarks(testId);
   return { testId, questionId, removed: true };
+}
+
+export async function reorderTestQuestions(
+  testId: string,
+  organizationId: string,
+  questionIds: string[],
+) {
+  await assertTestOrg(testId, organizationId);
+  const existing = await query<{ question_id: string }>(
+    `SELECT question_id FROM test_questions WHERE test_id = $1`,
+    [testId],
+  );
+  const onTest = new Set(existing.rows.map((r) => String(r.question_id)));
+  if (questionIds.length !== onTest.size || questionIds.some((id) => !onTest.has(id))) {
+    throw new ValidationError('questionIds must include every question currently on the test');
+  }
+  for (let i = 0; i < questionIds.length; i += 1) {
+    await query(
+      `UPDATE test_questions SET sort_order = $3 WHERE test_id = $1 AND question_id = $2`,
+      [testId, questionIds[i], i],
+    );
+  }
+  return getTestById(testId, organizationId);
 }
 
 export async function updateTest(

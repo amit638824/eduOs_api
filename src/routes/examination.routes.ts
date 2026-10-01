@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { authenticate, requirePermission, forbidSuperAdmin } from '../middleware/auth.js';
 import {
-  paginationSchema,
   uuidParamSchema,
   createSubjectSchema,
   createChapterSchema,
@@ -26,6 +25,8 @@ import {
   listSubjectsQuerySchema,
   listTestsQuerySchema,
   listAttemptsQuerySchema,
+  listAssignableStudentsQuerySchema,
+  reorderTestQuestionsSchema,
 } from '../validators/schemas.js';
 import * as examController from '../controllers/examination.controller.js';
 import * as certificateController from '../controllers/certificate.controller.js';
@@ -89,7 +90,7 @@ router.post(
 
 // Tests
 router.get('/tests', validate(listTestsQuerySchema, 'query'), requirePermission('test', 'read'), examController.listTests);
-router.get('/students', validate(paginationSchema, 'query'), requirePermission('test', 'assign'), examController.listAssignableStudents);
+router.get('/students', validate(listAssignableStudentsQuerySchema, 'query'), requirePermission('test', 'assign'), examController.listAssignableStudents);
 router.get('/tests/my', requirePermission('test', 'read'), examController.listMyTests);
 router.get(
   '/assignments/summary',
@@ -107,6 +108,13 @@ router.delete(
   validate(z.object({ id: z.string().uuid(), questionId: z.string().uuid() }), 'params'),
   requirePermission('test', 'update'),
   examController.removeQuestionFromTest,
+);
+router.patch(
+  '/tests/:id/questions/reorder',
+  validate(uuidParamSchema, 'params'),
+  validate(reorderTestQuestionsSchema),
+  requirePermission('test', 'update'),
+  examController.reorderTestQuestions,
 );
 router.post(
   '/tests/:id/publish',

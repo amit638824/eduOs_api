@@ -245,8 +245,12 @@ export async function getTest(req: Request, res: Response, next: NextFunction) {
 export async function listAssignableStudents(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const result = await testService.listAssignableStudents(orgId, page, limit);
+    const { page, limit, departmentId } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      departmentId?: string;
+    };
+    const result = await testService.listAssignableStudents(orgId, page, limit, departmentId);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -313,6 +317,18 @@ export async function removeQuestionFromTest(req: Request, res: Response, next: 
     const { id, questionId } = vParams(req) as { id: string; questionId: string };
     const result = await testService.removeQuestionFromTest(id, orgId, questionId);
     res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function reorderTestQuestions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { questionIds } = req.body as { questionIds: string[] };
+    const test = await testService.reorderTestQuestions(id, orgId, questionIds);
+    res.json({ success: true, data: test });
   } catch (e) {
     next(e);
   }
@@ -441,9 +457,11 @@ export async function getResult(req: Request, res: Response, next: NextFunction)
   try {
     const { orgId } = await orgContext(req);
     const { attemptId } = vParams(req) as { attemptId: string };
-    const result = await attemptService.getResultByAttemptId(attemptId, orgId);
     const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
     const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    const result = await attemptService.getResultByAttemptId(attemptId, orgId, {
+      hideAnswerKey: !isStaff,
+    });
     if (!isStaff) {
       const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
       if ((result as { student_id?: string }).student_id !== studentId) {

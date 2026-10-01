@@ -10,6 +10,8 @@ export interface ExamSecurityConfig {
   autoSubmit: boolean;
   allowResume: boolean;
   maxTabSwitches: number;
+  /** When false, students cannot see correct answers / option keys until staff enables. */
+  releaseAnswers: boolean;
 }
 
 export const DEFAULT_EXAM_CONFIG: ExamSecurityConfig = {
@@ -22,6 +24,7 @@ export const DEFAULT_EXAM_CONFIG: ExamSecurityConfig = {
   autoSubmit: true,
   allowResume: true,
   maxTabSwitches: 5,
+  releaseAnswers: false,
 };
 
 export function parseExamConfig(raw: unknown): ExamSecurityConfig {
@@ -36,6 +39,7 @@ export function parseExamConfig(raw: unknown): ExamSecurityConfig {
     autoSubmit: Boolean(cfg.autoSubmit ?? DEFAULT_EXAM_CONFIG.autoSubmit),
     allowResume: Boolean(cfg.allowResume ?? DEFAULT_EXAM_CONFIG.allowResume),
     maxTabSwitches: Number(cfg.maxTabSwitches ?? DEFAULT_EXAM_CONFIG.maxTabSwitches),
+    releaseAnswers: Boolean(cfg.releaseAnswers ?? DEFAULT_EXAM_CONFIG.releaseAnswers),
   };
 }
 

@@ -188,6 +188,10 @@ export async function startAttempt(testId: string, studentId: string, organizati
     [testId, studentId],
   );
   if (existing.rows[0]) {
+    const examConfig = parseExamConfig(test.rows[0].config);
+    if (!examConfig.allowResume) {
+      throw new ConflictError('Resume is disabled for this test. Contact your instructor.');
+    }
     const duration = Number(test.rows[0].duration_minutes) || 60;
     if (isExpired(new Date(existing.rows[0].started_at), duration)) {
       await submitAttempt(existing.rows[0].id as string, studentId, { autoSubmit: true });
@@ -456,11 +460,42 @@ export async function submitAttempt(
       },
     );
 
+    // Auto-issue certificate when org setting enabled and student passed
+    const orgId = String(attempt.rows[0].organization_id);
+    const resultId = String(out.id);
+    void maybeAutoIssueCertificate(orgId, resultId, studentId).catch(() => undefined);
+
     return out;
   });
 }
 
-export async function getResultByAttemptId(attemptId: string, organizationId: string) {
+async function maybeAutoIssueCertificate(organizationId: string, resultId: string, _studentId: string) {
+  const { getSettings } = await import('./settings.service.js');
+  const rows = await getSettings(organizationId, ['certificates.auto_issue']);
+  const raw = rows[0]?.value;
+  const enabled =
+    raw === true ||
+    raw === 1 ||
+    raw === '1' ||
+    raw === 'true' ||
+    (typeof raw === 'object' && raw != null && (raw as { enabled?: boolean }).enabled === true);
+  if (!enabled) return;
+  const { issueCertificateForResult } = await import('./certificate.service.js');
+  // issuedBy = system: use a null-safe placeholder — service requires user id; use student user via student lookup
+  const userRow = await query<{ user_id: string }>(
+    `SELECT user_id FROM students WHERE id = $1`,
+    [_studentId],
+  );
+  const issuedBy = userRow.rows[0]?.user_id ?? _studentId;
+  await issueCertificateForResult(resultId, organizationId, issuedBy);
+}
+
+export async function getResultByAttemptId(
+  attemptId: string,
+  organizationId: string,
+  options?: { hideAnswerKey?: boolean },
+) {
+  const hideAnswerKey = options?.hideAnswerKey === true;
   const result = await query(
     `SELECT r.id, r.attempt_id, r.student_id, r.test_id, r.total_score, r.max_score,
             r.percentage, r.accuracy, r.rank, r.percentile, r.analysis, r.created_at,
@@ -550,15 +585,23 @@ export async function getResultByAttemptId(attemptId: string, organizationId: st
     accuracy: graded.accuracy,
   };
 
+  // hideAnswerKey=true for students; staff always see key. releaseAnswers unlocks for students.
+  const showKey = !hideAnswerKey || examConfig.releaseAnswers;
+
   return {
     ...head,
-    questions: questions.rows.map((q) => ({
-      ...q,
-      content: parseJsonField(q.content) ?? q.content,
-      answer: asJsonObject(q.answer),
-      is_correct: isTruthyFlag(q.is_correct),
-      options: optionsByQuestion.get(q.question_id as string) ?? [],
-    })),
+    answers_released: showKey,
+    release_answers: examConfig.releaseAnswers,
+    questions: questions.rows.map((q) => {
+      const opts = optionsByQuestion.get(q.question_id as string) ?? [];
+      return {
+        ...q,
+        content: parseJsonField(q.content) ?? q.content,
+        answer: asJsonObject(q.answer),
+        is_correct: showKey ? isTruthyFlag(q.is_correct) : null,
+        options: showKey ? opts : opts.map((o) => ({ ...o, is_correct: undefined })),
+      };
+    }),
   };
 }
 
@@ -635,7 +678,9 @@ export async function getStudentStats(studentId: string, organizationId: string)
         WHERE r.student_id = $1 AND t.organization_id = $2) AS results,
        (SELECT COUNT(*)::int FROM test_attempts ta
         JOIN tests t ON t.id = ta.test_id
-        WHERE ta.student_id = $1 AND t.organization_id = $2 AND ta.status = 'in_progress') AS in_progress`,
+        WHERE ta.student_id = $1 AND t.organization_id = $2 AND ta.status = 'in_progress') AS in_progress,
+       (SELECT COUNT(*)::int FROM certificates c
+        WHERE c.student_id = $1 AND c.organization_id = $2 AND c.status = 'issued') AS certificates_count`,
     [studentId, organizationId],
   );
   return result.rows[0];

@@ -80,6 +80,14 @@ export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(20),
 });
 
+export const listAssignableStudentsQuerySchema = paginationSchema.extend({
+  departmentId: z.string().uuid().optional(),
+});
+
+export const reorderTestQuestionsSchema = z.object({
+  questionIds: z.array(z.string().uuid()).min(1),
+});
+
 export const uuidParamSchema = z.object({
   id: z.string().uuid(),
 });
