@@ -377,117 +377,121 @@ export async function logProctoringEvent(
   return { tab_switch_count: countTabSwitches(updated), log: entry };
 }
 
+
 export async function submitAttempt(
   attemptId: string,
   studentId: string,
   options?: { autoSubmit?: boolean },
 ) {
   const autoSubmit = options?.autoSubmit ?? false;
+  console.log('[SUBMIT] Started:', { attemptId, studentId, autoSubmit });
 
-  return withTransaction(async (client) => {
-    const attempt = await client.query(
-      `SELECT ta.id, ta.test_id, ta.status, t.organization_id, t.config
-       FROM test_attempts ta JOIN tests t ON t.id = ta.test_id
-       WHERE ta.id = $1 AND ta.student_id = $2 FOR UPDATE`,
-      [attemptId, studentId],
-    );
-    if (!attempt.rows[0]) throw new NotFoundError('Attempt');
-    if (attempt.rows[0].status !== 'in_progress') {
-      throw new ConflictError('Attempt already submitted');
+  try {
+    const transactionResult = await withTransaction(async (client) => {
+      console.log('[SUBMIT] Transaction started');
+      const attempt = await client.query(
+        `SELECT ta.id, ta.test_id, ta.status, t.organization_id, t.config
+         FROM test_attempts ta
+         JOIN tests t ON t.id = ta.test_id
+         WHERE ta.id = $1 AND ta.student_id = $2
+         FOR UPDATE`,
+        [attemptId, studentId],
+      );
+      console.log('[SUBMIT] Attempt:', attempt.rows[0]);
+      if (!attempt.rows[0]) throw new NotFoundError('Attempt');
+      if (attempt.rows[0].status !== 'in_progress') {
+        throw new ConflictError('Attempt already submitted');
+      }
+
+      const examConfig = parseExamConfig(attempt.rows[0].config);
+      const defaultNegative = examConfig.negativeMarking ? 0.25 : 0;
+      const testId = String(attempt.rows[0].test_id);
+
+      console.log('[SUBMIT] Grading...');
+      const graded = await gradeAttemptAnswers(client, attemptId, testId, defaultNegative);
+      console.log('[SUBMIT] Graded:', graded);
+
+      const finalStatus = autoSubmit ? 'auto_submitted' : 'submitted';
+      await client.query(
+        `UPDATE test_attempts SET status = $2, submitted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [attemptId, finalStatus],
+      );
+
+      console.log('[SUBMIT] Creating result...');
+      const result = await client.query(
+        `INSERT INTO results (attempt_id, student_id, test_id, total_score, max_score, percentage, accuracy, analysis)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, attempt_id, student_id, test_id, total_score, max_score, percentage, accuracy, created_at`,
+        [attemptId, studentId, testId, graded.totalScore, graded.maxScore, graded.percentage, graded.accuracy, JSON.stringify({ correct: graded.correct, total: graded.total, autoSubmit })],
+      );
+      if (!result.rows[0]) throw new ConflictError('Could not create exam result');
+      console.log('[SUBMIT] Result created:', result.rows[0]);
+
+      return { result: result.rows[0], organizationId: String(attempt.rows[0].organization_id), testId };
+    });
+
+    console.log('[SUBMIT] Transaction committed');
+    const resultId = String(transactionResult.result.id);
+    let finalResult = transactionResult.result;
+
+    try {
+      const { applyRanksForTest } = await import('./ranking.service.js');
+      await applyRanksForTest(transactionResult.testId, (sql, params) => query(sql, params));
+      const ranked = await query(`SELECT id, attempt_id, student_id, test_id, total_score, max_score, percentage, accuracy, rank, percentile, analysis, created_at FROM results WHERE id = $1`, [resultId]);
+      if (ranked.rows[0]) finalResult = ranked.rows[0];
+    } catch (error) {
+      console.error('[SUBMIT] Ranking failed:', error);
     }
 
-    const examConfig = parseExamConfig(attempt.rows[0].config);
-    const defaultNegative = examConfig.negativeMarking ? 0.25 : 0;
-    const graded = await gradeAttemptAnswers(
-      client,
-      attemptId,
-      attempt.rows[0].test_id as string,
-      defaultNegative,
-    );
-    const { totalScore, maxScore, percentage, accuracy } = graded;
-
-    const finalStatus = autoSubmit ? 'auto_submitted' : 'submitted';
-    await client.query(
-      `UPDATE test_attempts SET status = $2, submitted_at = NOW(), updated_at = NOW()
-       WHERE id = $1`,
-      [attemptId, finalStatus],
-    );
-
-    const result = await client.query(
-      `INSERT INTO results (attempt_id, student_id, test_id, total_score, max_score, percentage, accuracy, analysis)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, total_score, max_score, percentage, accuracy, created_at`,
-      [
-        attemptId,
+    try {
+      const titleRow = await query<{ title: string }>(`SELECT title FROM tests WHERE id = $1`, [transactionResult.testId]);
+      const pct = Number(finalResult.percentage ?? 0).toFixed(1);
+      const score = `${finalResult.total_score ?? 0}/${finalResult.max_score ?? 0}`;
+      await notificationService.notifyStudentByStudentId(
         studentId,
-        attempt.rows[0].test_id,
-        totalScore,
-        maxScore,
-        percentage,
-        accuracy,
-        JSON.stringify({ correct: graded.correct, total: graded.total, autoSubmit }),
-      ],
-    );
+        autoSubmit ? 'Exam auto-submitted' : 'Exam submitted',
+        autoSubmit
+          ? `"${titleRow.rows[0]?.title ?? 'Exam'}" was auto-submitted. Score: ${score} (${pct}%).`
+          : `"${titleRow.rows[0]?.title ?? 'Exam'}" submitted successfully. Score: ${score} (${pct}%). Check Results for details.`,
+        { testId: transactionResult.testId, attemptId, type: autoSubmit ? 'attempt_auto_submitted' : 'attempt_submitted', percentage: finalResult.percentage },
+      );
+    } catch (error) {
+      console.error('[SUBMIT] Notification failed:', error);
+    }
 
-    const testId = attempt.rows[0].test_id as string;
-    const { applyRanksForTest } = await import('./ranking.service.js');
-    await applyRanksForTest(testId, (sql, params) => client.query(sql, params));
+    let certificate = null;
+    try {
+      certificate = await maybeAutoIssueCertificate(transactionResult.organizationId, resultId, studentId);
+      console.log('[SUBMIT] Certificate:', certificate);
+    } catch (error) {
+      console.error('[SUBMIT] Certificate failed:', error);
+    }
 
-    const ranked = await client.query(
-      `SELECT id, attempt_id, total_score, max_score, percentage, accuracy, rank, percentile, created_at
-       FROM results WHERE attempt_id = $1`,
-      [attemptId],
-    );
-
-    const out = ranked.rows[0] ?? result.rows[0];
-    const titleRow = await client.query<{ title: string }>(
-      `SELECT title FROM tests WHERE id = $1`,
-      [testId],
-    );
-    const pct = Number(out.percentage ?? 0).toFixed(1);
-    const score = `${out.total_score ?? 0}/${out.max_score ?? 0}`;
-    void notificationService.notifyStudentByStudentId(
-      studentId,
-      autoSubmit ? 'Exam auto-submitted' : 'Exam submitted',
-      autoSubmit
-        ? `"${titleRow.rows[0]?.title ?? 'Exam'}" was auto-submitted. Score: ${score} (${pct}%).`
-        : `"${titleRow.rows[0]?.title ?? 'Exam'}" submitted successfully. Score: ${score} (${pct}%). Check Results for details.`,
-      {
-        testId,
-        attemptId,
-        type: autoSubmit ? 'attempt_auto_submitted' : 'attempt_submitted',
-        percentage: out.percentage,
-      },
-    );
-
-    // Auto-issue certificate when org setting enabled and student passed
-    const orgId = String(attempt.rows[0].organization_id);
-    const resultId = String(out.id);
-    void maybeAutoIssueCertificate(orgId, resultId, studentId).catch(() => undefined);
-
-    return out;
-  });
+    console.log('[SUBMIT] SUCCESS');
+    return { ...finalResult, certificate };
+  } catch (error: any) {
+    console.error('========== SUBMIT FAILED ==========');
+    console.error('Message:', error?.message);
+    console.error('Code:', error?.code);
+    console.error('Stack:', error?.stack);
+    console.error('Full error:', error);
+    console.error('===================================');
+    throw error;
+  }
 }
 
-async function maybeAutoIssueCertificate(organizationId: string, resultId: string, _studentId: string) {
-  const { getSettings } = await import('./settings.service.js');
-  const rows = await getSettings(organizationId, ['certificates.auto_issue']);
-  const raw = rows[0]?.value;
-  const enabled =
-    raw === true ||
-    raw === 1 ||
-    raw === '1' ||
-    raw === 'true' ||
-    (typeof raw === 'object' && raw != null && (raw as { enabled?: boolean }).enabled === true);
-  if (!enabled) return;
+async function maybeAutoIssueCertificate(
+  organizationId: string,
+  resultId: string,
+  studentId: string,
+) {
   const { issueCertificateForResult } = await import('./certificate.service.js');
-  // issuedBy = system: use a null-safe placeholder — service requires user id; use student user via student lookup
   const userRow = await query<{ user_id: string }>(
     `SELECT user_id FROM students WHERE id = $1`,
-    [_studentId],
+    [studentId],
   );
-  const issuedBy = userRow.rows[0]?.user_id ?? _studentId;
-  await issueCertificateForResult(resultId, organizationId, issuedBy);
+  const issuedBy = userRow.rows[0]?.user_id ?? studentId;
+  return issueCertificateForResult(resultId, organizationId, issuedBy);
 }
 
 export async function getResultByAttemptId(
