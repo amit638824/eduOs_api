@@ -226,7 +226,7 @@ export async function startAttempt(testId: string, studentId: string, organizati
 
   return result.rows[0];
 }
-
+// Krithy
 async function loadAttemptRow(attemptId: string, studentId: string) {
   const attempt = await query(
     `SELECT ta.id, ta.test_id, ta.student_id, ta.status, ta.started_at, ta.submitted_at,
