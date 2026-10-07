@@ -1,7 +1,7 @@
 import { query } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
-import { sendEmail } from './email.service.js';
+import { sendEmail, sendExamAssignmentEmail } from './email.service.js';
 import { isSmtpConfigured } from '../config/env.js';
 
 export async function listNotifications(userId: string, page: number, limit: number) {
@@ -93,6 +93,58 @@ export async function notifyStudentByStudentId(
   } catch (err) {
     console.error('[notification] notifyStudentByStudentId failed:', err);
     return null;
+  }
+}
+
+/**
+ * Send exam assignment email to a student.
+ * Resolves students.id → users.id → users.email.
+ * Never throws so exam assignment itself is not blocked by email failure.
+ */
+export async function notifyStudentByStudentIdEmail(input: {
+  studentId: string;
+  studentName: string;
+  examName: string;
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
+  durationMinutes?: number | null;
+  status?: string | null;
+}) {
+  try {
+    if (!input.studentId) return false;
+
+    const result = await query<{ user_id: string; email: string }>(
+      `SELECT s.user_id, u.email
+       FROM students s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.id = $1`,
+      [input.studentId],
+    );
+
+    const user = result.rows[0];
+
+    if (!user?.email) {
+      console.warn(
+        `[notification] No email found for student ${input.studentId}`,
+      );
+      return false;
+    }
+
+    return await sendExamAssignmentEmail({
+      to: user.email,
+      studentName: input.studentName,
+      examName: input.examName,
+      scheduledDate: input.scheduledDate,
+      scheduledTime: input.scheduledTime,
+      durationMinutes: input.durationMinutes,
+      status: input.status,
+    });
+  } catch (err) {
+    console.error(
+      '[notification] notifyStudentByStudentIdEmail failed:',
+      err,
+    );
+    return false;
   }
 }
 

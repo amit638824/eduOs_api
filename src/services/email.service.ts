@@ -3,6 +3,7 @@ import {
   contactFormMailTemplate,
   EMAIL_CID,
   emailVerificationOtpMailTemplate,
+  examAssignmentMailTemplate,
   forgetPasswordMailTemplate,
   organizationActionMailTemplate,
   organizationCredentialsMailTemplate,
@@ -35,20 +36,23 @@ const EMAIL_ASSETS_DIR = resolveEmailAssetsDir();
 
 let transporter: nodemailer.Transporter | null = null;
 
+
 function getTransporter(): nodemailer.Transporter | null {
   if (!isSmtpConfigured) return null;
+
   if (!transporter) {
     transporter = nodemailer.createTransport({
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
-      secure: false,
+      secure: false, // STARTTLS on port 587
+      requireTLS: true,
       auth: {
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
       },
-      tls: { ciphers: 'SSLv3', rejectUnauthorized: false },
     });
   }
+
   return transporter;
 }
 
@@ -162,6 +166,45 @@ export async function sendWelcomeEmail(email: string, firstName: string): Promis
     subject: `Welcome to ${env.APP_NAME}`,
     html: welcomeMailTemplate({ firstName, loginUrl }),
     text: `Welcome to ${env.APP_NAME}. Login at ${loginUrl}`,
+  });
+}
+
+export async function sendExamAssignmentEmail(input: {
+  to: string;
+  studentName: string;
+  examName: string;
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
+  durationMinutes?: number | null;
+  status?: string | null;
+}): Promise<boolean> {
+  const dashboardUrl = frontendUrl('/dashboard');
+
+  return sendEmail({
+    to: input.to,
+    subject: `${env.APP_NAME} — Exam assigned: ${input.examName}`,
+    html: examAssignmentMailTemplate({
+      studentName: input.studentName,
+      examName: input.examName,
+      scheduledDate: input.scheduledDate,
+      scheduledTime: input.scheduledTime,
+      durationMinutes: input.durationMinutes,
+      status: input.status,
+      dashboardUrl,
+    }),
+    text: [
+      `Hello ${input.studentName},`,
+      '',
+      `An exam has been assigned to you: ${input.examName}`,
+      input.scheduledDate ? `Scheduled date: ${input.scheduledDate}` : null,
+      input.scheduledTime ? `Scheduled time: ${input.scheduledTime}` : null,
+      input.durationMinutes ? `Duration: ${input.durationMinutes} minutes` : null,
+      input.status ? `Status: ${input.status}` : null,
+      '',
+      `Open your dashboard: ${dashboardUrl}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
   });
 }
 

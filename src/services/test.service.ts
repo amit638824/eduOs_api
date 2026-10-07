@@ -456,11 +456,22 @@ export async function assignTestToStudent(
   scheduledAt?: string,
 ) {
   await assertTestOrg(testId, organizationId);
-  const student = await query(
-    `SELECT id FROM students WHERE id = $1 AND organization_id = $2`,
+
+  const student = await query<{
+    id: string;
+    first_name: string;
+    last_name: string;
+  }>(
+    `SELECT s.id, u.first_name, u.last_name
+     FROM students s
+     JOIN users u ON u.id = s.user_id
+     WHERE s.id = $1 AND s.organization_id = $2`,
     [studentId, organizationId],
   );
-  if (!student.rows[0]) throw new NotFoundError('Student');
+
+  if (!student.rows[0]) {
+    throw new NotFoundError('Student');
+  }
 
   const result = await query(
     `INSERT INTO test_assignments (test_id, assignee_type, assignee_id, scheduled_at)
@@ -469,20 +480,77 @@ export async function assignTestToStudent(
     [testId, studentId, scheduledAt ?? null],
   );
 
-  const test = await query<{ title: string; status: string }>(
-    `SELECT title, status FROM tests WHERE id = $1`,
-    [testId],
-  );
+  const test = await query<{
+  title: string;
+  status: string;
+  duration_minutes: number | null;
+  scheduled_start: string | null;
+}>(
+  `SELECT title, status, duration_minutes, scheduled_start
+   FROM tests
+   WHERE id = $1`,
+  [testId],
+);
+
   const title = test.rows[0]?.title ?? 'a test';
   const status = test.rows[0]?.status ?? '';
+  const durationMinutes = test.rows[0]?.duration_minutes ?? null;
+
+  const firstName = student.rows[0].first_name ?? '';
+  const lastName = student.rows[0].last_name ?? '';
+  const studentName = `${firstName} ${lastName}`.trim() || 'Student';
+
+  /*
+   * Prefer the assignment scheduled time when provided.
+   * Otherwise use the test's scheduled start time.
+   */
+  const scheduledDateTime =
+    scheduledAt ?? test.rows[0]?.scheduled_start ?? null;
+
+  let scheduledDate: string | null = null;
+  let scheduledTime: string | null = null;
+
+  if (scheduledDateTime) {
+    const date = new Date(scheduledDateTime);
+
+    if (!Number.isNaN(date.getTime())) {
+      scheduledDate = date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      scheduledTime = date.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  }
+
+  // Existing in-app notification
   void notificationService.notifyStudentByStudentId(
     studentId,
     'Test assigned',
     status === 'live'
       ? `"${title}" has been assigned to you and is live. Open My Tests to start.`
       : `"${title}" has been assigned to you. You will be notified when it goes live.`,
-    { testId, type: 'test_assigned', status },
+    {
+      testId,
+      type: 'test_assigned',
+      status,
+    },
   );
+
+  // New exam assignment email
+  void notificationService.notifyStudentByStudentIdEmail({
+    studentId,
+    studentName,
+    examName: title,
+    scheduledDate,
+    scheduledTime,
+    durationMinutes,
+    status,
+  });
 
   return result.rows[0];
 }
@@ -526,6 +594,7 @@ export async function listStudentAssignedTests(studentId: string, organizationId
     `SELECT t.id, t.title, t.description, t.status, t.duration_minutes,
             t.passing_marks, t.published_at, t.scheduled_start, t.scheduled_end,
             t.total_marks,
+            COALESCE(ta_assign.scheduled_at, t.scheduled_start) AS effective_scheduled_start,
             ta_assign.scheduled_at,
             latest.id AS attempt_id,
             latest.status AS attempt_status,
