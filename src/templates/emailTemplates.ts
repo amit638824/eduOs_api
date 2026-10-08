@@ -363,6 +363,124 @@ export function welcomeMailTemplate({
   `);
 }
 
+/** Exam assignment notification for students */
+export function examAssignmentMailTemplate({
+  studentName,
+  examName,
+  scheduledDate,
+  scheduledTime,
+  durationMinutes,
+  status,
+  dashboardUrl = `${UI_BASE_URL}/dashboard`,
+}: {
+  studentName: string;
+  examName: string;
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
+  durationMinutes?: number | null;
+  status?: string | null;
+  dashboardUrl?: string;
+}): string {
+  return wrapEmailBody(`
+    <tr>
+      <td style="padding:0;Margin:0;" align="left">
+        <p style="Margin:0;line-height:24px;color:#000;">
+          Dear ${escapeHtml(studentName)},
+        </p>
+      </td>
+    </tr>
+
+    <tr>
+      <td style="padding:0;Margin:0;" align="left">
+        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
+          You have been assigned a new exam on
+          <strong>${escapeHtml(env.APP_NAME)}</strong>.
+        </p>
+
+        <p style="margin-bottom:16px;line-height:24px;color:#000;">
+          Please find the exam details below:
+        </p>
+
+        <table
+          style="width:100%;border-collapse:collapse;margin:12px 0 20px;background:#f8fafc;border:1px solid #e2e8f0;"
+          cellpadding="0"
+          cellspacing="0"
+        >
+          <tr>
+            <td style="padding:12px 16px;line-height:24px;color:#000;">
+              <strong>Exam Name:</strong><br/>
+              ${escapeHtml(examName)}
+            </td>
+          </tr>
+
+          ${
+            scheduledDate
+              ? `<tr>
+                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+                    <strong>Scheduled Date:</strong><br/>
+                    ${escapeHtml(scheduledDate)}
+                  </td>
+                </tr>`
+              : ''
+          }
+
+          ${
+            scheduledTime
+              ? `<tr>
+                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+                    <strong>Scheduled Time:</strong><br/>
+                    ${escapeHtml(scheduledTime)}
+                  </td>
+                </tr>`
+              : ''
+          }
+
+          ${
+            durationMinutes != null
+              ? `<tr>
+                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+                    <strong>Duration:</strong><br/>
+                    ${escapeHtml(String(durationMinutes))} minutes
+                  </td>
+                </tr>`
+              : ''
+          }
+
+          ${
+            status
+              ? `<tr>
+                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
+                    <strong>Status:</strong><br/>
+                    ${escapeHtml(status)}
+                  </td>
+                </tr>`
+              : ''
+          }
+        </table>
+
+        ${dashboardCta(dashboardUrl, 'Go to Dashboard')}
+
+        <p style="margin-bottom:10px;line-height:24px;color:#000;">
+          Please log in to your dashboard to view the exam and check all
+          available instructions before starting.
+        </p>
+
+        <p style="margin-bottom:10px;line-height:24px;color:#000;">
+          Good luck with your exam!
+        </p>
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        <p style="Margin:0;line-height:24px;color:#000;">
+          Regards,<br />${escapeHtml(TEAM_NAME)}
+        </p>
+      </td>
+    </tr>
+  `);
+}
+
 /** Payment confirmation */
 export function paymentConfirmationMailTemplate({
   amount,
