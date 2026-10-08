@@ -149,7 +149,8 @@ export function compileMysqlSql(
 }
 
 function stripReturning(sql: string): { body: string; returning: string | null } {
-  const match = sql.match(/^([\s\S]*?)\s+RETURNING\s+(.+?)\s*$/i);
+  // [\s\S] so multi-line RETURNING column lists are matched (`.` alone stops at newlines).
+  const match = sql.match(/^([\s\S]*?)\s+RETURNING\s+([\s\S]+?)\s*$/i);
   if (!match) return { body: sql.trim(), returning: null };
   return { body: match[1].trim(), returning: match[2].trim() };
 }

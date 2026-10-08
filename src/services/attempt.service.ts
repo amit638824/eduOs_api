@@ -19,6 +19,11 @@ import {
   parseJsonField,
 } from '../utils/json.js';
 
+import {
+  normalizeProctoringLog,
+  summarizeProctoring,
+} from '../utils/proctoring.js';
+
 import * as notificationService from './notification.service.js';
 
 function optionContent(
@@ -378,7 +383,7 @@ export async function startAttempt(
      WHERE test_id = $1
        AND assignee_type = 'student'
        AND assignee_id = $2
-     ORDER BY scheduled_at DESC NULLS LAST
+     ORDER BY (scheduled_at IS NULL), scheduled_at DESC
      LIMIT 1`,
     [testId, studentId],
   );
@@ -525,11 +530,12 @@ export async function startAttempt(
   }
 
   /*
-   * Check if the student already submitted
-   * the test.
+   * Enforce maxAttempts (retakes).
+   * Default maxAttempts=1 keeps prior single-attempt behaviour.
    */
+  const examConfigForStart = parseExamConfig(test.rows[0].config);
   const submitted = await query(
-    `SELECT id
+    `SELECT COUNT(*)::int AS cnt
      FROM test_attempts
      WHERE test_id = $1
        AND student_id = $2
@@ -539,10 +545,12 @@ export async function startAttempt(
        )`,
     [testId, studentId],
   );
-
-  if (submitted.rows[0]) {
+  const submittedCount = Number(submitted.rows[0]?.cnt ?? 0);
+  if (submittedCount >= examConfigForStart.maxAttempts) {
     throw new ConflictError(
-      'You have already submitted this test',
+      examConfigForStart.maxAttempts <= 1
+        ? 'You have already submitted this test'
+        : `Maximum attempts (${examConfigForStart.maxAttempts}) reached for this test`,
     );
   }
 
@@ -786,6 +794,7 @@ export async function saveAnswer(
   studentId: string,
   questionId: string,
   answer: Record<string, unknown>,
+  options?: { timeSpentSec?: number },
 ) {
   const row = await loadAttemptRow(
     attemptId,
@@ -832,18 +841,22 @@ export async function saveAnswer(
     throw new NotFoundError('Question');
   }
 
+  const timeSpent = Math.max(0, Math.floor(Number(options?.timeSpentSec ?? 0) || 0));
+
   const result = await query(
     `INSERT INTO attempt_answers (
        attempt_id,
        question_id,
        answer,
-       answered_at
+       answered_at,
+       time_spent_sec
      )
      VALUES (
        $1,
        $2,
        $3,
-       NOW()
+       NOW(),
+       $4
      )
      ON CONFLICT (
        attempt_id,
@@ -851,16 +864,19 @@ export async function saveAnswer(
      )
      DO UPDATE SET
        answer = EXCLUDED.answer,
-       answered_at = NOW()
+       answered_at = NOW(),
+       time_spent_sec = attempt_answers.time_spent_sec + EXCLUDED.time_spent_sec
      RETURNING
        id,
        question_id,
        answer,
-       answered_at`,
+       answered_at,
+       time_spent_sec`,
     [
       attemptId,
       questionId,
       answer,
+      timeSpent,
     ],
   );
 
@@ -886,12 +902,14 @@ export async function logProctoringEvent(
 ) {
   const attempt = await query(
     `SELECT
-       id,
-       status,
-       proctoring_log
-     FROM test_attempts
-     WHERE id = $1
-       AND student_id = $2`,
+       ta.id,
+       ta.status,
+       ta.proctoring_log,
+       t.config
+     FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     WHERE ta.id = $1
+       AND ta.student_id = $2`,
     [attemptId, studentId],
   );
 
@@ -908,7 +926,7 @@ export async function logProctoringEvent(
     );
   }
 
-  const log = asJsonArray(
+  const log = normalizeProctoringLog(
     attempt.rows[0].proctoring_log,
   );
 
@@ -923,21 +941,35 @@ export async function logProctoringEvent(
     entry,
   ];
 
+  const examConfig = parseExamConfig(attempt.rows[0].config);
+  const summary = summarizeProctoring(updated, examConfig);
+  const reviewStatus = summary.flagged ? 'pending' : 'none';
+
   await query(
     `UPDATE test_attempts
      SET
        proctoring_log = $2,
+       proctoring_flagged = $3,
+       proctoring_review_status = CASE
+         WHEN $3 = 1 AND proctoring_review_status IN ('reviewed', 'dismissed') THEN proctoring_review_status
+         WHEN $3 = 1 THEN 'pending'
+         ELSE proctoring_review_status
+       END,
        updated_at = NOW()
      WHERE id = $1`,
     [
       attemptId,
       updated,
+      summary.flagged ? 1 : 0,
     ],
   );
 
+  void reviewStatus;
+
   return {
-    tab_switch_count:
-      countTabSwitches(updated),
+    tab_switch_count: summary.tab_switches,
+    flagged: summary.flagged,
+    summary,
     log: entry,
   };
 }
@@ -972,6 +1004,7 @@ export async function submitAttempt(
                  ta.id,
                  ta.test_id,
                  ta.status,
+                 ta.proctoring_log,
                  t.organization_id,
                  t.config
                FROM test_attempts ta
@@ -1042,16 +1075,28 @@ export async function submitAttempt(
               ? 'auto_submitted'
               : 'submitted';
 
+          const proctorSummary = summarizeProctoring(
+            normalizeProctoringLog(attempt.rows[0].proctoring_log),
+            examConfig,
+          );
+
           await client.query(
             `UPDATE test_attempts
              SET
                status = $2,
                submitted_at = NOW(),
+               proctoring_flagged = $3,
+               proctoring_review_status = CASE
+                 WHEN $3 = 1 AND proctoring_review_status IN ('reviewed', 'dismissed') THEN proctoring_review_status
+                 WHEN $3 = 1 THEN 'pending'
+                 ELSE proctoring_review_status
+               END,
                updated_at = NOW()
              WHERE id = $1`,
             [
               attemptId,
               finalStatus,
+              proctorSummary.flagged ? 1 : 0,
             ],
           );
 
@@ -1575,11 +1620,37 @@ export async function getResultByAttemptId(
     !hideAnswerKey ||
     examConfig.releaseAnswers;
 
+  const attemptMeta = await query(
+    `SELECT proctoring_log, proctoring_flagged, proctoring_review_status
+     FROM test_attempts WHERE id = $1`,
+    [attemptId],
+  );
+  const proctorLog = normalizeProctoringLog(attemptMeta.rows[0]?.proctoring_log);
+  const proctorSummary = summarizeProctoring(proctorLog, examConfig);
+  const includeProctoring = !hideAnswerKey;
+
   return {
     ...head,
     answers_released: showKey,
     release_answers:
       examConfig.releaseAnswers,
+    scoring_policy: examConfig.scoringPolicy,
+    max_attempts: examConfig.maxAttempts,
+    proctoring_flagged: Boolean(attemptMeta.rows[0]?.proctoring_flagged) || proctorSummary.flagged,
+    proctoring_review_status: attemptMeta.rows[0]?.proctoring_review_status ?? 'none',
+    ...(includeProctoring
+      ? {
+          proctoring_timeline: proctorLog,
+          proctoring_summary: proctorSummary,
+        }
+      : {
+          proctoring_summary: {
+            flagged: proctorSummary.flagged,
+            tab_switches: proctorSummary.tab_switches,
+            fullscreen_exits: proctorSummary.fullscreen_exits,
+            copy_paste_attempts: proctorSummary.copy_paste_attempts,
+          },
+        }),
 
     questions:
       questions.rows.map((q) => {
@@ -1668,6 +1739,8 @@ export async function listAttempts(
            ta.status,
            ta.started_at,
            ta.submitted_at,
+           ta.proctoring_flagged,
+           ta.proctoring_review_status,
            t.title AS test_title,
            u.first_name,
            u.last_name,
@@ -1816,4 +1889,228 @@ export async function getStudentStats(
   );
 
   return result.rows[0];
+}
+
+export async function listFlaggedAttempts(
+  organizationId: string,
+  page: number,
+  limit: number,
+  reviewStatus?: string,
+) {
+  const offset = (page - 1) * limit;
+  const params: unknown[] = [organizationId];
+  let where =
+    `t.organization_id = $1 AND ta.proctoring_flagged = 1`;
+  if (reviewStatus && reviewStatus !== 'all') {
+    params.push(reviewStatus);
+    where += ` AND ta.proctoring_review_status = $${params.length}`;
+  } else if (!reviewStatus) {
+    where += ` AND ta.proctoring_review_status = 'pending'`;
+  }
+  params.push(limit, offset);
+
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT
+         ta.id,
+         ta.test_id,
+         ta.student_id,
+         ta.status,
+         ta.started_at,
+         ta.submitted_at,
+         ta.proctoring_flagged,
+         ta.proctoring_review_status,
+         ta.proctoring_log,
+         t.title AS test_title,
+         t.config,
+         u.first_name,
+         u.last_name,
+         u.email,
+         r.percentage,
+         r.attempt_id AS result_attempt_id
+       FROM test_attempts ta
+       JOIN tests t ON t.id = ta.test_id
+       JOIN students s ON s.id = ta.student_id
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN results r ON r.attempt_id = ta.id
+       WHERE ${where}
+       ORDER BY ta.submitted_at DESC, ta.started_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    ),
+    query(
+      `SELECT COUNT(*)::int AS total
+       FROM test_attempts ta
+       JOIN tests t ON t.id = ta.test_id
+       WHERE ${where}`,
+      params.slice(0, -2),
+    ),
+  ]);
+
+  const rows = data.rows.map((row) => {
+    const config = parseExamConfig(row.config);
+    const log = normalizeProctoringLog(row.proctoring_log);
+    const summary = summarizeProctoring(log, config);
+    const { proctoring_log: _log, config: _cfg, ...rest } = row as Record<string, unknown>;
+    void _log;
+    void _cfg;
+    return { ...rest, proctoring_summary: summary };
+  });
+
+  const total = Number(count.rows[0]?.total ?? 0);
+  return {
+    data: rows,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  } satisfies PaginatedResult<unknown>;
+}
+
+export async function getAttemptProctoring(
+  attemptId: string,
+  organizationId: string,
+) {
+  const result = await query(
+    `SELECT
+       ta.id,
+       ta.test_id,
+       ta.student_id,
+       ta.status,
+       ta.started_at,
+       ta.submitted_at,
+       ta.proctoring_log,
+       ta.proctoring_flagged,
+       ta.proctoring_review_status,
+       t.title AS test_title,
+       t.config,
+       u.first_name,
+       u.last_name,
+       u.email,
+       r.attempt_id AS result_attempt_id,
+       r.percentage
+     FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     JOIN students s ON s.id = ta.student_id
+     JOIN users u ON u.id = s.user_id
+     LEFT JOIN results r ON r.attempt_id = ta.id
+     WHERE ta.id = $1 AND t.organization_id = $2`,
+    [attemptId, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('Attempt');
+  const row = result.rows[0];
+  const config = parseExamConfig(row.config);
+  const timeline = normalizeProctoringLog(row.proctoring_log);
+  const summary = summarizeProctoring(timeline, config);
+  return {
+    id: row.id,
+    test_id: row.test_id,
+    test_title: row.test_title,
+    student_id: row.student_id,
+    first_name: row.first_name,
+    last_name: row.last_name,
+    email: row.email,
+    status: row.status,
+    started_at: row.started_at,
+    submitted_at: row.submitted_at,
+    result_attempt_id: row.result_attempt_id,
+    percentage: row.percentage,
+    proctoring_flagged: Boolean(row.proctoring_flagged) || summary.flagged,
+    proctoring_review_status: row.proctoring_review_status,
+    proctoring_summary: summary,
+    proctoring_timeline: timeline,
+    thresholds: {
+      maxTabSwitches: config.maxTabSwitches,
+      maxFullscreenExits: config.maxFullscreenExits,
+      maxCopyPasteAttempts: config.maxCopyPasteAttempts,
+    },
+  };
+}
+
+export async function updateProctoringReview(
+  attemptId: string,
+  organizationId: string,
+  status: 'reviewed' | 'dismissed' | 'pending',
+) {
+  const owned = await query(
+    `SELECT ta.id FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     WHERE ta.id = $1 AND t.organization_id = $2`,
+    [attemptId, organizationId],
+  );
+  if (!owned.rows[0]) throw new NotFoundError('Attempt');
+
+  await query(
+    `UPDATE test_attempts
+     SET proctoring_review_status = $2, updated_at = NOW()
+     WHERE id = $1`,
+    [attemptId, status],
+  );
+
+  const result = await query(
+    `SELECT id, proctoring_review_status, proctoring_flagged
+     FROM test_attempts WHERE id = $1`,
+    [attemptId],
+  );
+  return result.rows[0];
+}
+
+/** Sibling attempts for the same student+test (attempt history switcher). */
+export async function listAttemptHistoryForTest(
+  testId: string,
+  studentId: string,
+  organizationId: string,
+) {
+  const test = await query(
+    `SELECT id, config FROM tests WHERE id = $1 AND organization_id = $2`,
+    [testId, organizationId],
+  );
+  if (!test.rows[0]) throw new NotFoundError('Test');
+  const config = parseExamConfig(test.rows[0].config);
+
+  const result = await query(
+    `SELECT
+       ta.id AS attempt_id,
+       ta.status,
+       ta.started_at,
+       ta.submitted_at,
+       ta.proctoring_flagged,
+       r.id AS result_id,
+       r.total_score,
+       r.max_score,
+       r.percentage,
+       r.rank
+     FROM test_attempts ta
+     LEFT JOIN results r ON r.attempt_id = ta.id
+     WHERE ta.test_id = $1 AND ta.student_id = $2
+     ORDER BY ta.started_at ASC`,
+    [testId, studentId],
+  );
+
+  let officialAttemptId: string | null = null;
+  const completed = result.rows.filter(
+    (r) => r.status === 'submitted' || r.status === 'auto_submitted',
+  );
+  if (completed.length > 0) {
+    if (config.scoringPolicy === 'highest') {
+      officialAttemptId = [...completed].sort(
+        (a, b) => Number(b.percentage ?? 0) - Number(a.percentage ?? 0),
+      )[0]?.attempt_id as string;
+    } else {
+      officialAttemptId = completed[completed.length - 1]?.attempt_id as string;
+    }
+  }
+
+  return {
+    scoring_policy: config.scoringPolicy,
+    max_attempts: config.maxAttempts,
+    official_attempt_id: officialAttemptId,
+    attempts: result.rows.map((row, index) => ({
+      ...row,
+      attempt_number: index + 1,
+      is_official: row.attempt_id === officialAttemptId,
+    })),
+  };
 }

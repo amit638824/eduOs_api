@@ -196,6 +196,7 @@ export const assignTestSchema = z.object({
 export const saveAnswerSchema = z.object({
   questionId: z.string().uuid(),
   answer: z.record(z.unknown()),
+  timeSpentSec: z.number().int().min(0).max(86400).optional(),
 });
 
 export const submitAttemptSchema = z.object({
@@ -205,6 +206,14 @@ export const submitAttemptSchema = z.object({
 export const proctoringEventSchema = z.object({
   event: z.string().min(1).max(64),
   detail: z.record(z.unknown()).optional(),
+});
+
+export const proctoringReviewSchema = z.object({
+  status: z.enum(['reviewed', 'dismissed', 'pending']),
+});
+
+export const listFlaggedAttemptsQuerySchema = paginationSchema.extend({
+  reviewStatus: z.enum(['pending', 'reviewed', 'dismissed', 'all']).optional(),
 });
 
 export const updateProfileSchema = z.object({

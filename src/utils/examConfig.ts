@@ -1,5 +1,7 @@
 import { asJsonObject } from './json.js';
 
+export type ScoringPolicy = 'latest' | 'highest';
+
 export interface ExamSecurityConfig {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
@@ -12,6 +14,14 @@ export interface ExamSecurityConfig {
   maxTabSwitches: number;
   /** When false, students cannot see correct answers / option keys until staff enables. */
   releaseAnswers: boolean;
+  /** Max submitted attempts allowed (1 = single attempt). */
+  maxAttempts: number;
+  /** Which attempt counts for official score when retakes exist. */
+  scoringPolicy: ScoringPolicy;
+  /** Soft-flag threshold for fullscreen exits. */
+  maxFullscreenExits: number;
+  /** Soft-flag threshold for copy/paste attempt events. */
+  maxCopyPasteAttempts: number;
 }
 
 export const DEFAULT_EXAM_CONFIG: ExamSecurityConfig = {
@@ -25,10 +35,15 @@ export const DEFAULT_EXAM_CONFIG: ExamSecurityConfig = {
   allowResume: true,
   maxTabSwitches: 5,
   releaseAnswers: false,
+  maxAttempts: 1,
+  scoringPolicy: 'latest',
+  maxFullscreenExits: 3,
+  maxCopyPasteAttempts: 3,
 };
 
 export function parseExamConfig(raw: unknown): ExamSecurityConfig {
   const cfg = asJsonObject(raw) ?? {};
+  const policy = String(cfg.scoringPolicy ?? DEFAULT_EXAM_CONFIG.scoringPolicy);
   return {
     shuffleQuestions: Boolean(cfg.shuffleQuestions ?? DEFAULT_EXAM_CONFIG.shuffleQuestions),
     shuffleOptions: Boolean(cfg.shuffleOptions ?? DEFAULT_EXAM_CONFIG.shuffleOptions),
@@ -38,8 +53,18 @@ export function parseExamConfig(raw: unknown): ExamSecurityConfig {
     blockCopyPaste: Boolean(cfg.blockCopyPaste ?? DEFAULT_EXAM_CONFIG.blockCopyPaste),
     autoSubmit: Boolean(cfg.autoSubmit ?? DEFAULT_EXAM_CONFIG.autoSubmit),
     allowResume: Boolean(cfg.allowResume ?? DEFAULT_EXAM_CONFIG.allowResume),
-    maxTabSwitches: Number(cfg.maxTabSwitches ?? DEFAULT_EXAM_CONFIG.maxTabSwitches),
+    maxTabSwitches: Math.max(0, Number(cfg.maxTabSwitches ?? DEFAULT_EXAM_CONFIG.maxTabSwitches)),
     releaseAnswers: Boolean(cfg.releaseAnswers ?? DEFAULT_EXAM_CONFIG.releaseAnswers),
+    maxAttempts: Math.max(1, Number(cfg.maxAttempts ?? DEFAULT_EXAM_CONFIG.maxAttempts) || 1),
+    scoringPolicy: policy === 'highest' ? 'highest' : 'latest',
+    maxFullscreenExits: Math.max(
+      0,
+      Number(cfg.maxFullscreenExits ?? DEFAULT_EXAM_CONFIG.maxFullscreenExits),
+    ),
+    maxCopyPasteAttempts: Math.max(
+      0,
+      Number(cfg.maxCopyPasteAttempts ?? DEFAULT_EXAM_CONFIG.maxCopyPasteAttempts),
+    ),
   };
 }
 
