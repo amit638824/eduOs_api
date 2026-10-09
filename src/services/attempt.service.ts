@@ -1,0 +1,2116 @@
+import { query, withTransaction, type DbClient } from '../config/database.js';
+
+import {
+  NotFoundError,
+  ConflictError,
+  ForbiddenError,
+} from '../utils/errors.js';
+
+import { PaginatedResult } from '../types/express.js';
+
+import {
+  parseExamConfig,
+  seededShuffle,
+} from '../utils/examConfig.js';
+
+import {
+  asJsonArray,
+  asJsonObject,
+  parseJsonField,
+} from '../utils/json.js';
+
+import {
+  normalizeProctoringLog,
+  summarizeProctoring,
+} from '../utils/proctoring.js';
+
+import * as notificationService from './notification.service.js';
+
+function optionContent(
+  raw: unknown,
+): { text?: string; value?: number } {
+  const parsed = parseJsonField(raw);
+
+  if (
+    parsed != null &&
+    typeof parsed === 'object' &&
+    !Array.isArray(parsed)
+  ) {
+    return parsed as {
+      text?: string;
+      value?: number;
+    };
+  }
+
+  if (typeof parsed === 'string') {
+    return { text: parsed };
+  }
+
+  return {};
+}
+
+function isTruthyFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1';
+}
+
+/**
+ * Grade stored attempt_answers and return score summary.
+ */
+async function gradeAttemptAnswers(
+  client: DbClient,
+  attemptId: string,
+  testId: string,
+  defaultNegative: number,
+) {
+  const answers = await client.query(
+    `SELECT
+       aa.question_id,
+       aa.answer,
+       q.type,
+       COALESCE(tq.marks_override, q.marks) AS marks,
+       q.negative_marks
+     FROM attempt_answers aa
+     JOIN questions q
+       ON q.id = aa.question_id
+     JOIN test_questions tq
+       ON tq.test_id = $2
+      AND tq.question_id = aa.question_id
+     WHERE aa.attempt_id = $1`,
+    [attemptId, testId],
+  );
+
+  let totalScore = 0;
+  let maxScore = 0;
+  let correct = 0;
+  let total = 0;
+
+  for (const row of answers.rows) {
+    const marks = Number(row.marks);
+
+    maxScore += marks;
+    total += 1;
+
+    const optionsResult = await client.query(
+      `SELECT
+         id,
+         is_correct,
+         content
+       FROM question_options
+       WHERE question_id = $1`,
+      [row.question_id],
+    );
+
+    const correctIds = optionsResult.rows
+      .filter((o) => isTruthyFlag(o.is_correct))
+      .map((o) => String(o.id));
+
+    const answer = asJsonObject(row.answer) ?? {};
+
+    const selectedRaw = answer.selectedOptionIds;
+
+    const selected = Array.isArray(selectedRaw)
+      ? selectedRaw.map(String)
+      : [];
+
+    const answerText =
+      typeof answer.text === 'string'
+        ? answer.text
+        : '';
+
+    const answerValue = answer.value;
+
+    let isCorrect = false;
+    let marksAwarded = 0;
+
+    const type = String(row.type);
+
+    if (
+      type === 'mcq' ||
+      type === 'true_false'
+    ) {
+      isCorrect =
+        selected.length === 1 &&
+        correctIds.length === 1 &&
+        selected[0] === correctIds[0];
+    } else if (type === 'msq') {
+      const selectedSet = new Set(selected);
+      const correctSet = new Set(correctIds);
+
+      isCorrect =
+        selectedSet.size === correctSet.size &&
+        [...correctSet].every((id) =>
+          selectedSet.has(id),
+        );
+    } else if (type === 'fill_blank') {
+      const correctOpt = optionsResult.rows.find(
+        (o) => isTruthyFlag(o.is_correct),
+      );
+
+      const expected =
+        optionContent(correctOpt?.content)
+          .text?.trim()
+          .toLowerCase() ?? '';
+
+      const given = answerText
+        .trim()
+        .toLowerCase();
+
+      isCorrect =
+        expected.length > 0 &&
+        given === expected;
+    } else if (
+      type === 'integer' ||
+      type === 'numerical'
+    ) {
+      const correctOpt = optionsResult.rows.find(
+        (o) => isTruthyFlag(o.is_correct),
+      );
+
+      const content = optionContent(
+        correctOpt?.content,
+      );
+
+      const expected = Number(
+        content.value ?? content.text,
+      );
+
+      const given = Number(answerValue);
+
+      if (type === 'integer') {
+        isCorrect =
+          Number.isInteger(given) &&
+          given === expected;
+      } else {
+        isCorrect =
+          !Number.isNaN(given) &&
+          !Number.isNaN(expected) &&
+          Math.abs(given - expected) < 0.01;
+      }
+    }
+
+    const hasResponse =
+      selected.length > 0 ||
+      answerText.trim() !== '' ||
+      (answerValue != null &&
+        String(answerValue) !== '');
+
+    if (isCorrect) {
+      marksAwarded = marks;
+      correct += 1;
+    } else if (hasResponse) {
+      const neg =
+        Number(row.negative_marks) ||
+        defaultNegative;
+
+      if (neg > 0) {
+        marksAwarded = -neg;
+      }
+    }
+
+    totalScore += marksAwarded;
+
+    await client.query(
+      `UPDATE attempt_answers
+       SET
+         is_correct = $3,
+         marks_awarded = $4
+       WHERE attempt_id = $1
+         AND question_id = $2`,
+      [
+        attemptId,
+        row.question_id,
+        isCorrect,
+        marksAwarded,
+      ],
+    );
+  }
+
+  const maxFromTest = await client.query(
+    `SELECT
+       COALESCE(total_marks, 0) AS total
+     FROM tests
+     WHERE id = $1`,
+    [testId],
+  );
+
+  maxScore =
+    Number(maxFromTest.rows[0]?.total) ||
+    maxScore;
+
+  const percentage =
+    maxScore > 0
+      ? (totalScore / maxScore) * 100
+      : 0;
+
+  const accuracy =
+    total > 0
+      ? (correct / total) * 100
+      : 0;
+
+  return {
+    totalScore,
+    maxScore,
+    percentage,
+    accuracy,
+    correct,
+    total,
+  };
+}
+
+export async function getStudentIdByUserId(
+  userId: string,
+): Promise<string> {
+  const result = await query(
+    `SELECT id
+     FROM students
+     WHERE user_id = $1`,
+    [userId],
+  );
+
+  if (!result.rows[0]) {
+    throw new ForbiddenError(
+      'Student profile not found',
+    );
+  }
+
+  return result.rows[0].id as string;
+}
+
+function getEndsAt(
+  startedAt: Date,
+  durationMinutes: number,
+): Date {
+  return new Date(
+    startedAt.getTime() +
+      durationMinutes * 60 * 1000,
+  );
+}
+
+function getRemainingSeconds(
+  startedAt: Date,
+  durationMinutes: number,
+): number {
+  const endsAt = getEndsAt(
+    startedAt,
+    durationMinutes,
+  );
+
+  return Math.max(
+    0,
+    Math.floor(
+      (endsAt.getTime() - Date.now()) / 1000,
+    ),
+  );
+}
+
+function isExpired(
+  startedAt: Date,
+  durationMinutes: number,
+): boolean {
+  return (
+    getRemainingSeconds(
+      startedAt,
+      durationMinutes,
+    ) <= 0
+  );
+}
+
+function countTabSwitches(
+  proctoringLog: unknown,
+): number {
+  const log = asJsonArray(proctoringLog);
+
+  return log.filter(
+    (e) =>
+      (e as { event?: string })?.event ===
+      'tab_switch',
+  ).length;
+}
+
+/**
+ * Start an exam attempt.
+ *
+ * Scheduled exams:
+ * - Student assignment schedule has priority.
+ * - Test schedule is used as fallback.
+ * - Student cannot start before the effective schedule.
+ * - Student cannot start after the test window ends.
+ */
+export async function startAttempt(
+  testId: string,
+  studentId: string,
+  organizationId: string,
+) {
+  const { activateDueScheduledTests } =
+    await import('./test.service.js');
+
+  // Activate tests whose test-level scheduled time has arrived.
+  await activateDueScheduledTests(
+    organizationId,
+  );
+
+  const test = await query(
+    `SELECT
+       id,
+       status,
+       duration_minutes,
+       config,
+       scheduled_start,
+       scheduled_end
+     FROM tests
+     WHERE id = $1
+       AND organization_id = $2
+       AND status IN ('live', 'scheduled')
+       AND archived_at IS NULL`,
+    [testId, organizationId],
+  );
+
+  if (!test.rows[0]) {
+    throw new NotFoundError('Test');
+  }
+
+  /*
+   * Find the student's assignment.
+   *
+   * scheduled_at is the student-specific
+   * scheduled start time.
+   */
+  const assigned = await query(
+    `SELECT
+       id,
+       scheduled_at
+     FROM test_assignments
+     WHERE test_id = $1
+       AND assignee_type = 'student'
+       AND assignee_id = $2
+     ORDER BY (scheduled_at IS NULL), scheduled_at DESC
+     LIMIT 1`,
+    [testId, studentId],
+  );
+
+  if (!assigned.rows[0]) {
+    throw new ForbiddenError(
+      'Test is not assigned to you',
+    );
+  }
+
+  /*
+   * Test-level scheduled start.
+   */
+  const testScheduledStart =
+    test.rows[0].scheduled_start
+      ? new Date(
+          test.rows[0].scheduled_start as string,
+        )
+      : null;
+
+  /*
+   * Student-specific scheduled start.
+   */
+  const assignmentScheduledStart =
+    assigned.rows[0].scheduled_at
+      ? new Date(
+          assigned.rows[0].scheduled_at as string,
+        )
+      : null;
+
+  /*
+   * Student assignment schedule has priority.
+   *
+   * If no assignment schedule exists,
+   * use the test-level schedule.
+   */
+  const effectiveScheduledStart =
+    assignmentScheduledStart ??
+    testScheduledStart;
+
+  /*
+   * Test-level scheduled end.
+   */
+  const scheduledEnd =
+    test.rows[0].scheduled_end
+      ? new Date(
+          test.rows[0].scheduled_end as string,
+        )
+      : null;
+
+  /*
+   * Prevent starting before the scheduled time.
+   */
+  if (
+    test.rows[0].status === 'scheduled' ||
+    (effectiveScheduledStart &&
+      effectiveScheduledStart.getTime() >
+        Date.now())
+  ) {
+    const opensAt =
+      effectiveScheduledStart?.toISOString() ??
+      'scheduled time';
+
+    throw new ForbiddenError(
+      `Test is not live yet. Opens at ${opensAt}`,
+    );
+  }
+
+  /*
+   * Prevent starting after the test window ends.
+   */
+  if (
+    scheduledEnd &&
+    scheduledEnd.getTime() < Date.now()
+  ) {
+    throw new ForbiddenError(
+      'This test window has ended',
+    );
+  }
+
+  /*
+   * Check for an existing in-progress attempt.
+   */
+  const existing = await query(
+    `SELECT
+       id,
+       status,
+       started_at
+     FROM test_attempts
+     WHERE test_id = $1
+       AND student_id = $2
+       AND status = 'in_progress'`,
+    [testId, studentId],
+  );
+
+  if (existing.rows[0]) {
+    const examConfig = parseExamConfig(
+      test.rows[0].config,
+    );
+
+    /*
+     * Resume is disabled.
+     */
+    if (!examConfig.allowResume) {
+      throw new ConflictError(
+        'Resume is disabled for this test. Contact your instructor.',
+      );
+    }
+
+    const duration =
+      Number(
+        test.rows[0].duration_minutes,
+      ) || 60;
+
+    /*
+     * Existing attempt expired.
+     */
+    if (
+      isExpired(
+        new Date(
+          existing.rows[0].started_at,
+        ),
+        duration,
+      )
+    ) {
+      await submitAttempt(
+        existing.rows[0].id as string,
+        studentId,
+        {
+          autoSubmit: true,
+        },
+      );
+
+      throw new ConflictError(
+        'Time expired — test was auto-submitted',
+      );
+    }
+
+    /*
+     * Existing attempt is still active.
+     * Return it so the student can resume.
+     */
+    return existing.rows[0];
+  }
+
+  /*
+   * Enforce maxAttempts (retakes).
+   * Default maxAttempts=1 keeps prior single-attempt behaviour.
+   */
+  const examConfigForStart = parseExamConfig(test.rows[0].config);
+  const submitted = await query(
+    `SELECT COUNT(*)::int AS cnt
+     FROM test_attempts
+     WHERE test_id = $1
+       AND student_id = $2
+       AND status IN (
+         'submitted',
+         'auto_submitted'
+       )`,
+    [testId, studentId],
+  );
+  const submittedCount = Number(submitted.rows[0]?.cnt ?? 0);
+  if (submittedCount >= examConfigForStart.maxAttempts) {
+    throw new ConflictError(
+      examConfigForStart.maxAttempts <= 1
+        ? 'You have already submitted this test'
+        : `Maximum attempts (${examConfigForStart.maxAttempts}) reached for this test`,
+    );
+  }
+
+  /*
+   * Create a new attempt.
+   */
+  const result = await query(
+    `INSERT INTO test_attempts (
+       test_id,
+       student_id,
+       status
+     )
+     VALUES (
+       $1,
+       $2,
+       'in_progress'
+     )
+     RETURNING
+       id,
+       test_id,
+       student_id,
+       status,
+       started_at`,
+    [testId, studentId],
+  );
+
+  /*
+   * Get test title.
+   */
+  const titleRow =
+    await query<{ title: string }>(
+      `SELECT title
+       FROM tests
+       WHERE id = $1`,
+      [testId],
+    );
+
+  /*
+   * Notify the student.
+   */
+  void notificationService.notifyStudentByStudentId(
+    studentId,
+    'Exam started',
+    `You started "${
+      titleRow.rows[0]?.title ??
+      'the test'
+    }". Good luck!`,
+    {
+      testId,
+      attemptId: result.rows[0].id,
+      type: 'attempt_started',
+    },
+  );
+
+  return result.rows[0];
+}
+
+// Krithy
+
+async function loadAttemptRow(
+  attemptId: string,
+  studentId: string,
+) {
+  const attempt = await query(
+    `SELECT
+       ta.id,
+       ta.test_id,
+       ta.student_id,
+       ta.status,
+       ta.started_at,
+       ta.submitted_at,
+       ta.proctoring_log,
+       t.title,
+       t.duration_minutes,
+       t.instructions,
+       t.config,
+       t.passing_marks
+     FROM test_attempts ta
+     JOIN tests t
+       ON t.id = ta.test_id
+     WHERE ta.id = $1
+       AND ta.student_id = $2`,
+    [attemptId, studentId],
+  );
+
+  if (!attempt.rows[0]) {
+    throw new NotFoundError('Attempt');
+  }
+
+  return attempt.rows[0];
+}
+
+export async function getAttemptForStudent(
+  attemptId: string,
+  studentId: string,
+) {
+  const row = await loadAttemptRow(
+    attemptId,
+    studentId,
+  );
+
+  const duration =
+    Number(row.duration_minutes) || 60;
+
+  const startedAt = new Date(
+    row.started_at,
+  );
+
+  const config = parseExamConfig(
+    row.config,
+  );
+
+  if (
+    row.status === 'in_progress' &&
+    isExpired(startedAt, duration)
+  ) {
+    await submitAttempt(
+      attemptId,
+      studentId,
+      {
+        autoSubmit: true,
+      },
+    );
+
+    throw new ConflictError(
+      'TIME_EXPIRED',
+    );
+  }
+
+  const questions = await query(
+    `SELECT
+       tq.question_id,
+       tq.sort_order,
+       q.type,
+       q.content,
+       q.marks,
+       COALESCE(aa.answer, NULL) AS answer,
+       aa.answered_at
+     FROM test_questions tq
+     JOIN questions q
+       ON q.id = tq.question_id
+     LEFT JOIN attempt_answers aa
+       ON aa.attempt_id = $1
+      AND aa.question_id = q.id
+     WHERE tq.test_id = $2
+     ORDER BY tq.sort_order`,
+    [attemptId, row.test_id],
+  );
+
+  const options = await query(
+    `SELECT
+       qo.id,
+       qo.question_id,
+       qo.content,
+       qo.sort_order
+     FROM question_options qo
+     JOIN test_questions tq
+       ON tq.question_id = qo.question_id
+     WHERE tq.test_id = $1
+     ORDER BY qo.sort_order`,
+    [row.test_id],
+  );
+
+  let questionRows = questions.rows;
+
+  if (config.shuffleQuestions) {
+    questionRows = seededShuffle(
+      questionRows,
+      `${attemptId}-questions`,
+    );
+  }
+
+  const mappedQuestions =
+    questionRows.map((q) => {
+      let opts = options.rows.filter(
+        (o) =>
+          o.question_id === q.question_id,
+      );
+
+      if (config.shuffleOptions) {
+        opts = seededShuffle(
+          opts,
+          `${attemptId}-${q.question_id}-options`,
+        );
+      }
+
+      return {
+        ...q,
+        content:
+          parseJsonField(q.content) ??
+          q.content,
+        answer: asJsonObject(q.answer),
+        options: opts.map((o) => {
+          const optContent =
+            optionContent(o.content);
+
+          return {
+            id: o.id,
+            content: optContent,
+            sort_order: o.sort_order,
+          };
+        }),
+      };
+    });
+
+  const remainingSeconds =
+    row.status === 'in_progress'
+      ? getRemainingSeconds(
+          startedAt,
+          duration,
+        )
+      : 0;
+
+  return {
+    id: row.id,
+    test_id: row.test_id,
+    student_id: row.student_id,
+    status: row.status,
+    started_at: row.started_at,
+    submitted_at: row.submitted_at,
+    title: row.title,
+    test_title: row.title,
+    duration_minutes: duration,
+    instructions: row.instructions,
+    passing_marks: row.passing_marks,
+    config,
+    ends_at: getEndsAt(
+      startedAt,
+      duration,
+    ).toISOString(),
+    remaining_seconds: remainingSeconds,
+    tab_switch_count: countTabSwitches(
+      row.proctoring_log,
+    ),
+    questions: mappedQuestions,
+  };
+}
+
+export async function saveAnswer(
+  attemptId: string,
+  studentId: string,
+  questionId: string,
+  answer: Record<string, unknown>,
+  options?: { timeSpentSec?: number },
+) {
+  const row = await loadAttemptRow(
+    attemptId,
+    studentId,
+  );
+
+  if (row.status !== 'in_progress') {
+    throw new ConflictError(
+      'Attempt is not in progress',
+    );
+  }
+
+  const duration =
+    Number(row.duration_minutes) || 60;
+
+  if (
+    isExpired(
+      new Date(row.started_at),
+      duration,
+    )
+  ) {
+    await submitAttempt(
+      attemptId,
+      studentId,
+      {
+        autoSubmit: true,
+      },
+    );
+
+    throw new ConflictError(
+      'Time expired — test was auto-submitted',
+    );
+  }
+
+  const inTest = await query(
+    `SELECT 1
+     FROM test_questions
+     WHERE test_id = $1
+       AND question_id = $2`,
+    [row.test_id, questionId],
+  );
+
+  if (!inTest.rows[0]) {
+    throw new NotFoundError('Question');
+  }
+
+  const timeSpent = Math.max(0, Math.floor(Number(options?.timeSpentSec ?? 0) || 0));
+
+  const result = await query(
+    `INSERT INTO attempt_answers (
+       attempt_id,
+       question_id,
+       answer,
+       answered_at,
+       time_spent_sec
+     )
+     VALUES (
+       $1,
+       $2,
+       $3,
+       NOW(),
+       $4
+     )
+     ON CONFLICT (
+       attempt_id,
+       question_id
+     )
+     DO UPDATE SET
+       answer = EXCLUDED.answer,
+       answered_at = NOW(),
+       time_spent_sec = attempt_answers.time_spent_sec + EXCLUDED.time_spent_sec
+     RETURNING
+       id,
+       question_id,
+       answer,
+       answered_at,
+       time_spent_sec`,
+    [
+      attemptId,
+      questionId,
+      answer,
+      timeSpent,
+    ],
+  );
+
+  const rowOut = result.rows[0];
+
+  if (!rowOut) {
+    return rowOut;
+  }
+
+  return {
+    ...rowOut,
+    answer:
+      asJsonObject(rowOut.answer) ??
+      rowOut.answer,
+  };
+}
+
+export async function logProctoringEvent(
+  attemptId: string,
+  studentId: string,
+  event: string,
+  detail?: Record<string, unknown>,
+) {
+  const attempt = await query(
+    `SELECT
+       ta.id,
+       ta.status,
+       ta.proctoring_log,
+       t.config
+     FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     WHERE ta.id = $1
+       AND ta.student_id = $2`,
+    [attemptId, studentId],
+  );
+
+  if (!attempt.rows[0]) {
+    throw new NotFoundError('Attempt');
+  }
+
+  if (
+    attempt.rows[0].status !==
+    'in_progress'
+  ) {
+    throw new ConflictError(
+      'Attempt is not in progress',
+    );
+  }
+
+  const log = normalizeProctoringLog(
+    attempt.rows[0].proctoring_log,
+  );
+
+  const entry = {
+    event,
+    detail: detail ?? {},
+    at: new Date().toISOString(),
+  };
+
+  const updated = [
+    ...log,
+    entry,
+  ];
+
+  const examConfig = parseExamConfig(attempt.rows[0].config);
+  const summary = summarizeProctoring(updated, examConfig);
+  const reviewStatus = summary.flagged ? 'pending' : 'none';
+
+  await query(
+    `UPDATE test_attempts
+     SET
+       proctoring_log = $2,
+       proctoring_flagged = $3,
+       proctoring_review_status = CASE
+         WHEN $3 = 1 AND proctoring_review_status IN ('reviewed', 'dismissed') THEN proctoring_review_status
+         WHEN $3 = 1 THEN 'pending'
+         ELSE proctoring_review_status
+       END,
+       updated_at = NOW()
+     WHERE id = $1`,
+    [
+      attemptId,
+      updated,
+      summary.flagged ? 1 : 0,
+    ],
+  );
+
+  void reviewStatus;
+
+  return {
+    tab_switch_count: summary.tab_switches,
+    flagged: summary.flagged,
+    summary,
+    log: entry,
+  };
+}
+
+export async function submitAttempt(
+  attemptId: string,
+  studentId: string,
+  options?: {
+    autoSubmit?: boolean;
+  },
+) {
+  const autoSubmit =
+    options?.autoSubmit ?? false;
+
+  console.log('[SUBMIT] Started:', {
+    attemptId,
+    studentId,
+    autoSubmit,
+  });
+
+  try {
+    const transactionResult =
+      await withTransaction(
+        async (client) => {
+          console.log(
+            '[SUBMIT] Transaction started',
+          );
+
+          const attempt =
+            await client.query(
+              `SELECT
+                 ta.id,
+                 ta.test_id,
+                 ta.status,
+                 ta.proctoring_log,
+                 t.organization_id,
+                 t.config
+               FROM test_attempts ta
+               JOIN tests t
+                 ON t.id = ta.test_id
+               WHERE ta.id = $1
+                 AND ta.student_id = $2
+               FOR UPDATE`,
+              [
+                attemptId,
+                studentId,
+              ],
+            );
+
+          console.log(
+            '[SUBMIT] Attempt:',
+            attempt.rows[0],
+          );
+
+          if (!attempt.rows[0]) {
+            throw new NotFoundError(
+              'Attempt',
+            );
+          }
+
+          if (
+            attempt.rows[0].status !==
+            'in_progress'
+          ) {
+            throw new ConflictError(
+              'Attempt already submitted',
+            );
+          }
+
+          const examConfig =
+            parseExamConfig(
+              attempt.rows[0].config,
+            );
+
+          const defaultNegative =
+            examConfig.negativeMarking
+              ? 0.25
+              : 0;
+
+          const testId = String(
+            attempt.rows[0].test_id,
+          );
+
+          console.log(
+            '[SUBMIT] Grading...',
+          );
+
+          const graded =
+            await gradeAttemptAnswers(
+              client,
+              attemptId,
+              testId,
+              defaultNegative,
+            );
+
+          console.log(
+            '[SUBMIT] Graded:',
+            graded,
+          );
+
+          const finalStatus =
+            autoSubmit
+              ? 'auto_submitted'
+              : 'submitted';
+
+          const proctorSummary = summarizeProctoring(
+            normalizeProctoringLog(attempt.rows[0].proctoring_log),
+            examConfig,
+          );
+
+          await client.query(
+            `UPDATE test_attempts
+             SET
+               status = $2,
+               submitted_at = NOW(),
+               proctoring_flagged = $3,
+               proctoring_review_status = CASE
+                 WHEN $3 = 1 AND proctoring_review_status IN ('reviewed', 'dismissed') THEN proctoring_review_status
+                 WHEN $3 = 1 THEN 'pending'
+                 ELSE proctoring_review_status
+               END,
+               updated_at = NOW()
+             WHERE id = $1`,
+            [
+              attemptId,
+              finalStatus,
+              proctorSummary.flagged ? 1 : 0,
+            ],
+          );
+
+          console.log(
+            '[SUBMIT] Creating result...',
+          );
+
+          const result =
+            await client.query(
+              `INSERT INTO results (
+                 attempt_id,
+                 student_id,
+                 test_id,
+                 total_score,
+                 max_score,
+                 percentage,
+                 accuracy,
+                 analysis
+               )
+               VALUES (
+                 $1,
+                 $2,
+                 $3,
+                 $4,
+                 $5,
+                 $6,
+                 $7,
+                 $8
+               )
+               RETURNING
+                 id,
+                 attempt_id,
+                 student_id,
+                 test_id,
+                 total_score,
+                 max_score,
+                 percentage,
+                 accuracy,
+                 created_at`,
+              [
+                attemptId,
+                studentId,
+                testId,
+                graded.totalScore,
+                graded.maxScore,
+                graded.percentage,
+                graded.accuracy,
+                JSON.stringify({
+                  correct:
+                    graded.correct,
+                  total:
+                    graded.total,
+                  autoSubmit,
+                }),
+              ],
+            );
+
+          if (!result.rows[0]) {
+            throw new ConflictError(
+              'Could not create exam result',
+            );
+          }
+
+          console.log(
+            '[SUBMIT] Result created:',
+            result.rows[0],
+          );
+
+          return {
+            result: result.rows[0],
+            organizationId:
+              String(
+                attempt.rows[0]
+                  .organization_id,
+              ),
+            testId,
+          };
+        },
+      );
+
+    console.log(
+      '[SUBMIT] Transaction committed',
+    );
+
+    const resultId = String(
+      transactionResult.result.id,
+    );
+
+    let finalResult =
+      transactionResult.result;
+
+    try {
+      const {
+        applyRanksForTest,
+      } = await import(
+        './ranking.service.js'
+      );
+
+      await applyRanksForTest(
+        transactionResult.testId,
+        (sql, params) =>
+          query(sql, params),
+      );
+
+      const ranked = await query(
+        `SELECT
+           id,
+           attempt_id,
+           student_id,
+           test_id,
+           total_score,
+           max_score,
+           percentage,
+           accuracy,
+           rank,
+           percentile,
+           analysis,
+           created_at
+         FROM results
+         WHERE id = $1`,
+        [resultId],
+      );
+
+      if (ranked.rows[0]) {
+        finalResult =
+          ranked.rows[0];
+      }
+    } catch (error) {
+      console.error(
+        '[SUBMIT] Ranking failed:',
+        error,
+      );
+    }
+
+    try {
+      const titleRow =
+        await query<{ title: string }>(
+          `SELECT title
+           FROM tests
+           WHERE id = $1`,
+          [transactionResult.testId],
+        );
+
+      const pct = Number(
+        finalResult.percentage ?? 0,
+      ).toFixed(1);
+
+      const score =
+        `${finalResult.total_score ?? 0}/${finalResult.max_score ?? 0}`;
+
+      await notificationService.notifyStudentByStudentId(
+        studentId,
+        autoSubmit
+          ? 'Exam auto-submitted'
+          : 'Exam submitted',
+        autoSubmit
+          ? `"${titleRow.rows[0]?.title ?? 'Exam'}" was auto-submitted. Score: ${score} (${pct}%).`
+          : `"${titleRow.rows[0]?.title ?? 'Exam'}" submitted successfully. Score: ${score} (${pct}%). Check Results for details.`,
+        {
+          testId:
+            transactionResult.testId,
+          attemptId,
+          type: autoSubmit
+            ? 'attempt_auto_submitted'
+            : 'attempt_submitted',
+          percentage:
+            finalResult.percentage,
+        },
+      );
+    } catch (error) {
+      console.error(
+        '[SUBMIT] Notification failed:',
+        error,
+      );
+    }
+
+    let certificate = null;
+
+    try {
+      certificate =
+        await maybeAutoIssueCertificate(
+          transactionResult.organizationId,
+          resultId,
+          studentId,
+        );
+
+      console.log(
+        '[SUBMIT] Certificate:',
+        certificate,
+      );
+    } catch (error) {
+      console.error(
+        '[SUBMIT] Certificate failed:',
+        error,
+      );
+    }
+
+    console.log(
+      '[SUBMIT] SUCCESS',
+    );
+
+    return {
+      ...finalResult,
+      certificate,
+    };
+  } catch (error: any) {
+    console.error(
+      '========== SUBMIT FAILED ==========',
+    );
+
+    console.error(
+      'Message:',
+      error?.message,
+    );
+
+    console.error(
+      'Code:',
+      error?.code,
+    );
+
+    console.error(
+      'Stack:',
+      error?.stack,
+    );
+
+    console.error(
+      'Full error:',
+      error,
+    );
+
+    console.error(
+      '===================================',
+    );
+
+    throw error;
+  }
+}
+
+async function maybeAutoIssueCertificate(
+  organizationId: string,
+  resultId: string,
+  studentId: string,
+) {
+  const {
+    issueCertificateForResult,
+  } = await import(
+    './certificate.service.js'
+  );
+
+  const userRow =
+    await query<{ user_id: string }>(
+      `SELECT user_id
+       FROM students
+       WHERE id = $1`,
+      [studentId],
+    );
+
+  const issuedBy =
+    userRow.rows[0]?.user_id ??
+    studentId;
+
+  return issueCertificateForResult(
+    resultId,
+    organizationId,
+    issuedBy,
+  );
+}
+
+export async function getResultByAttemptId(
+  attemptId: string,
+  organizationId: string,
+  options?: {
+    hideAnswerKey?: boolean;
+  },
+) {
+  const hideAnswerKey =
+    options?.hideAnswerKey === true;
+
+  const result = await query(
+    `SELECT
+       r.id,
+       r.attempt_id,
+       r.student_id,
+       r.test_id,
+       r.total_score,
+       r.max_score,
+       r.percentage,
+       r.accuracy,
+       r.rank,
+       r.percentile,
+       r.analysis,
+       r.created_at,
+       t.title AS test_title,
+       t.passing_marks,
+       t.config,
+       u.first_name,
+       u.last_name
+     FROM results r
+     JOIN tests t
+       ON t.id = r.test_id
+     JOIN students s
+       ON s.id = r.student_id
+     JOIN users u
+       ON u.id = s.user_id
+     WHERE r.attempt_id = $1
+       AND t.organization_id = $2`,
+    [
+      attemptId,
+      organizationId,
+    ],
+  );
+
+  if (!result.rows[0]) {
+    throw new NotFoundError(
+      'Result',
+    );
+  }
+
+  // Re-grade so MariaDB JSON-string answers
+  // get corrected when the result is viewed.
+  const testId = String(
+    result.rows[0].test_id,
+  );
+
+  const examConfig =
+    parseExamConfig(
+      result.rows[0].config,
+    );
+
+  const defaultNegative =
+    examConfig.negativeMarking
+      ? 0.25
+      : 0;
+
+  const graded =
+    await withTransaction(
+      async (client) => {
+        const summary =
+          await gradeAttemptAnswers(
+            client,
+            attemptId,
+            testId,
+            defaultNegative,
+          );
+
+        await client.query(
+          `UPDATE results
+           SET
+             total_score = $2,
+             max_score = $3,
+             percentage = $4,
+             accuracy = $5
+           WHERE attempt_id = $1`,
+          [
+            attemptId,
+            summary.totalScore,
+            summary.maxScore,
+            summary.percentage,
+            summary.accuracy,
+          ],
+        );
+
+        return summary;
+      },
+    );
+
+  const refreshed = await query(
+    `SELECT
+       r.id,
+       r.attempt_id,
+       r.student_id,
+       r.test_id,
+       r.total_score,
+       r.max_score,
+       r.percentage,
+       r.accuracy,
+       r.rank,
+       r.percentile,
+       r.analysis,
+       r.created_at,
+       t.title AS test_title,
+       t.passing_marks,
+       u.first_name,
+       u.last_name
+     FROM results r
+     JOIN tests t
+       ON t.id = r.test_id
+     JOIN students s
+       ON s.id = r.student_id
+     JOIN users u
+       ON u.id = s.user_id
+     WHERE r.attempt_id = $1
+       AND t.organization_id = $2`,
+    [
+      attemptId,
+      organizationId,
+    ],
+  );
+
+  const questions = await query(
+    `SELECT
+       aa.question_id,
+       q.type,
+       q.content,
+       COALESCE(
+         tq.marks_override,
+         q.marks
+       ) AS marks,
+       aa.answer,
+       aa.is_correct,
+       aa.marks_awarded,
+       tq.sort_order
+     FROM attempt_answers aa
+     JOIN questions q
+       ON q.id = aa.question_id
+     JOIN test_attempts ta
+       ON ta.id = aa.attempt_id
+     LEFT JOIN test_questions tq
+       ON tq.test_id = ta.test_id
+      AND tq.question_id = aa.question_id
+     WHERE aa.attempt_id = $1
+     ORDER BY
+       (tq.sort_order IS NULL),
+       tq.sort_order,
+       aa.question_id`,
+    [attemptId],
+  );
+
+  const questionIds =
+    questions.rows
+      .map(
+        (q) =>
+          q.question_id as string,
+      )
+      .filter(Boolean);
+
+  const optionsByQuestion =
+    new Map<
+      string,
+      Record<string, unknown>[]
+    >();
+
+  if (questionIds.length > 0) {
+    const placeholders =
+      questionIds
+        .map(
+          (_, i) =>
+            `$${i + 1}`,
+        )
+        .join(', ');
+
+    const options =
+      await query<{
+        question_id: string;
+        id: string;
+        content: unknown;
+        is_correct:
+          | boolean
+          | number;
+        sort_order: number;
+      }>(
+        `SELECT
+           question_id,
+           id,
+           content,
+           is_correct,
+           sort_order
+         FROM question_options
+         WHERE question_id IN (
+           ${placeholders}
+         )
+         ORDER BY
+           sort_order,
+           id`,
+        questionIds,
+      );
+
+    for (const opt of options.rows) {
+      const list =
+        optionsByQuestion.get(
+          opt.question_id,
+        ) ?? [];
+
+      list.push({
+        id: opt.id,
+        content:
+          optionContent(
+            opt.content,
+          ),
+        is_correct:
+          isTruthyFlag(
+            opt.is_correct,
+          ),
+        sort_order:
+          opt.sort_order,
+      });
+
+      optionsByQuestion.set(
+        opt.question_id,
+        list,
+      );
+    }
+  }
+
+  const head =
+    refreshed.rows[0] ?? {
+      ...result.rows[0],
+      total_score:
+        graded.totalScore,
+      max_score:
+        graded.maxScore,
+      percentage:
+        graded.percentage,
+      accuracy:
+        graded.accuracy,
+    };
+
+  // hideAnswerKey=true for students.
+  // releaseAnswers unlocks answers for students.
+  const showKey =
+    !hideAnswerKey ||
+    examConfig.releaseAnswers;
+
+  const attemptMeta = await query(
+    `SELECT proctoring_log, proctoring_flagged, proctoring_review_status
+     FROM test_attempts WHERE id = $1`,
+    [attemptId],
+  );
+  const proctorLog = normalizeProctoringLog(attemptMeta.rows[0]?.proctoring_log);
+  const proctorSummary = summarizeProctoring(proctorLog, examConfig);
+  const includeProctoring = !hideAnswerKey;
+
+  return {
+    ...head,
+    answers_released: showKey,
+    release_answers:
+      examConfig.releaseAnswers,
+    scoring_policy: examConfig.scoringPolicy,
+    max_attempts: examConfig.maxAttempts,
+    proctoring_flagged: Boolean(attemptMeta.rows[0]?.proctoring_flagged) || proctorSummary.flagged,
+    proctoring_review_status: attemptMeta.rows[0]?.proctoring_review_status ?? 'none',
+    ...(includeProctoring
+      ? {
+          proctoring_timeline: proctorLog,
+          proctoring_summary: proctorSummary,
+        }
+      : {
+          proctoring_summary: {
+            flagged: proctorSummary.flagged,
+            tab_switches: proctorSummary.tab_switches,
+            fullscreen_exits: proctorSummary.fullscreen_exits,
+            copy_paste_attempts: proctorSummary.copy_paste_attempts,
+          },
+        }),
+
+    questions:
+      questions.rows.map((q) => {
+        const opts =
+          optionsByQuestion.get(
+            q.question_id as string,
+          ) ?? [];
+
+        return {
+          ...q,
+
+          content:
+            parseJsonField(q.content) ??
+            q.content,
+
+          answer:
+            asJsonObject(q.answer),
+
+          is_correct: showKey
+            ? isTruthyFlag(
+                q.is_correct,
+              )
+            : null,
+
+          options: showKey
+            ? opts
+            : opts.map((o) => ({
+                ...o,
+                is_correct:
+                  undefined,
+              })),
+        };
+      }),
+  };
+}
+
+export async function listAttempts(
+  organizationId: string,
+  page: number,
+  limit: number,
+  filters?: {
+    testId?: string;
+    studentId?: string;
+  },
+) {
+  const offset =
+    (page - 1) * limit;
+
+  const params: unknown[] = [
+    organizationId,
+  ];
+
+  let where =
+    't.organization_id = $1';
+
+  if (filters?.testId) {
+    params.push(
+      filters.testId,
+    );
+
+    where +=
+      ` AND ta.test_id = $${params.length}`;
+  }
+
+  if (filters?.studentId) {
+    params.push(
+      filters.studentId,
+    );
+
+    where +=
+      ` AND ta.student_id = $${params.length}`;
+  }
+
+  params.push(
+    limit,
+    offset,
+  );
+
+  const [data, count] =
+    await Promise.all([
+      query(
+        `SELECT
+           ta.id,
+           ta.test_id,
+           ta.student_id,
+           ta.status,
+           ta.started_at,
+           ta.submitted_at,
+           ta.proctoring_flagged,
+           ta.proctoring_review_status,
+           t.title AS test_title,
+           u.first_name,
+           u.last_name,
+           u.email,
+           r.total_score,
+           r.max_score,
+           r.percentage,
+           r.attempt_id AS result_attempt_id
+         FROM test_attempts ta
+         JOIN tests t
+           ON t.id = ta.test_id
+         JOIN students s
+           ON s.id = ta.student_id
+         JOIN users u
+           ON u.id = s.user_id
+         LEFT JOIN results r
+           ON r.attempt_id = ta.id
+         WHERE ${where}
+         ORDER BY
+           ta.started_at DESC
+         LIMIT $${params.length - 1}
+         OFFSET $${params.length}`,
+        params,
+      ),
+
+      query(
+        `SELECT
+           COUNT(*)::int AS total
+         FROM test_attempts ta
+         JOIN tests t
+           ON t.id = ta.test_id
+         WHERE ${where}`,
+        params.slice(0, -2),
+      ),
+    ]);
+
+  const total =
+    count.rows[0].total as number;
+
+  return {
+    data: data.rows,
+
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages:
+        Math.ceil(
+          total / limit,
+        ),
+    },
+  } satisfies PaginatedResult<unknown>;
+}
+
+export async function listStudentResults(
+  studentId: string,
+  organizationId: string,
+) {
+  const result = await query(
+    `SELECT
+       r.id,
+       r.attempt_id,
+       r.test_id,
+       r.total_score,
+       r.max_score,
+       r.percentage,
+       r.accuracy,
+       r.rank,
+       r.percentile,
+       r.created_at,
+       t.title AS test_title,
+       t.passing_marks
+     FROM results r
+     JOIN tests t
+       ON t.id = r.test_id
+     WHERE r.student_id = $1
+       AND t.organization_id = $2
+     ORDER BY
+       r.created_at DESC`,
+    [
+      studentId,
+      organizationId,
+    ],
+  );
+
+  return result.rows;
+}
+
+export async function getStudentStats(
+  studentId: string,
+  organizationId: string,
+) {
+  const result = await query(
+    `SELECT
+
+       (
+         SELECT COUNT(DISTINCT t.id)::int
+         FROM test_assignments ta
+         JOIN tests t
+           ON t.id = ta.test_id
+         WHERE ta.assignee_type = 'student'
+           AND ta.assignee_id = $1
+           AND t.organization_id = $2
+           AND t.status = 'live'
+       ) AS assigned_tests,
+
+       (
+         SELECT COUNT(*)::int
+         FROM test_attempts ta
+         JOIN tests t
+           ON t.id = ta.test_id
+         WHERE ta.student_id = $1
+           AND t.organization_id = $2
+       ) AS attempts,
+
+       (
+         SELECT COUNT(*)::int
+         FROM results r
+         JOIN tests t
+           ON t.id = r.test_id
+         WHERE r.student_id = $1
+           AND t.organization_id = $2
+       ) AS results,
+
+       (
+         SELECT COUNT(*)::int
+         FROM test_attempts ta
+         JOIN tests t
+           ON t.id = ta.test_id
+         WHERE ta.student_id = $1
+           AND t.organization_id = $2
+           AND ta.status = 'in_progress'
+       ) AS in_progress,
+
+       (
+         SELECT COUNT(*)::int
+         FROM certificates c
+         WHERE c.student_id = $1
+           AND c.organization_id = $2
+           AND c.status = 'issued'
+       ) AS certificates_count`,
+    [
+      studentId,
+      organizationId,
+    ],
+  );
+
+  return result.rows[0];
+}
+
+export async function listFlaggedAttempts(
+  organizationId: string,
+  page: number,
+  limit: number,
+  reviewStatus?: string,
+) {
+  const offset = (page - 1) * limit;
+  const params: unknown[] = [organizationId];
+  let where =
+    `t.organization_id = $1 AND ta.proctoring_flagged = 1`;
+  if (reviewStatus && reviewStatus !== 'all') {
+    params.push(reviewStatus);
+    where += ` AND ta.proctoring_review_status = $${params.length}`;
+  } else if (!reviewStatus) {
+    where += ` AND ta.proctoring_review_status = 'pending'`;
+  }
+  params.push(limit, offset);
+
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT
+         ta.id,
+         ta.test_id,
+         ta.student_id,
+         ta.status,
+         ta.started_at,
+         ta.submitted_at,
+         ta.proctoring_flagged,
+         ta.proctoring_review_status,
+         ta.proctoring_log,
+         t.title AS test_title,
+         t.config,
+         u.first_name,
+         u.last_name,
+         u.email,
+         r.percentage,
+         r.attempt_id AS result_attempt_id
+       FROM test_attempts ta
+       JOIN tests t ON t.id = ta.test_id
+       JOIN students s ON s.id = ta.student_id
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN results r ON r.attempt_id = ta.id
+       WHERE ${where}
+       ORDER BY ta.submitted_at DESC, ta.started_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    ),
+    query(
+      `SELECT COUNT(*)::int AS total
+       FROM test_attempts ta
+       JOIN tests t ON t.id = ta.test_id
+       WHERE ${where}`,
+      params.slice(0, -2),
+    ),
+  ]);
+
+  const rows = data.rows.map((row) => {
+    const config = parseExamConfig(row.config);
+    const log = normalizeProctoringLog(row.proctoring_log);
+    const summary = summarizeProctoring(log, config);
+    const { proctoring_log: _log, config: _cfg, ...rest } = row as Record<string, unknown>;
+    void _log;
+    void _cfg;
+    return { ...rest, proctoring_summary: summary };
+  });
+
+  const total = Number(count.rows[0]?.total ?? 0);
+  return {
+    data: rows,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  } satisfies PaginatedResult<unknown>;
+}
+
+export async function getAttemptProctoring(
+  attemptId: string,
+  organizationId: string,
+) {
+  const result = await query(
+    `SELECT
+       ta.id,
+       ta.test_id,
+       ta.student_id,
+       ta.status,
+       ta.started_at,
+       ta.submitted_at,
+       ta.proctoring_log,
+       ta.proctoring_flagged,
+       ta.proctoring_review_status,
+       t.title AS test_title,
+       t.config,
+       u.first_name,
+       u.last_name,
+       u.email,
+       r.attempt_id AS result_attempt_id,
+       r.percentage
+     FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     JOIN students s ON s.id = ta.student_id
+     JOIN users u ON u.id = s.user_id
+     LEFT JOIN results r ON r.attempt_id = ta.id
+     WHERE ta.id = $1 AND t.organization_id = $2`,
+    [attemptId, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('Attempt');
+  const row = result.rows[0];
+  const config = parseExamConfig(row.config);
+  const timeline = normalizeProctoringLog(row.proctoring_log);
+  const summary = summarizeProctoring(timeline, config);
+  return {
+    id: row.id,
+    test_id: row.test_id,
+    test_title: row.test_title,
+    student_id: row.student_id,
+    first_name: row.first_name,
+    last_name: row.last_name,
+    email: row.email,
+    status: row.status,
+    started_at: row.started_at,
+    submitted_at: row.submitted_at,
+    result_attempt_id: row.result_attempt_id,
+    percentage: row.percentage,
+    proctoring_flagged: Boolean(row.proctoring_flagged) || summary.flagged,
+    proctoring_review_status: row.proctoring_review_status,
+    proctoring_summary: summary,
+    proctoring_timeline: timeline,
+    thresholds: {
+      maxTabSwitches: config.maxTabSwitches,
+      maxFullscreenExits: config.maxFullscreenExits,
+      maxCopyPasteAttempts: config.maxCopyPasteAttempts,
+    },
+  };
+}
+
+export async function updateProctoringReview(
+  attemptId: string,
+  organizationId: string,
+  status: 'reviewed' | 'dismissed' | 'pending',
+) {
+  const owned = await query(
+    `SELECT ta.id FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     WHERE ta.id = $1 AND t.organization_id = $2`,
+    [attemptId, organizationId],
+  );
+  if (!owned.rows[0]) throw new NotFoundError('Attempt');
+
+  await query(
+    `UPDATE test_attempts
+     SET proctoring_review_status = $2, updated_at = NOW()
+     WHERE id = $1`,
+    [attemptId, status],
+  );
+
+  const result = await query(
+    `SELECT id, proctoring_review_status, proctoring_flagged
+     FROM test_attempts WHERE id = $1`,
+    [attemptId],
+  );
+  return result.rows[0];
+}
+
+/** Sibling attempts for the same student+test (attempt history switcher). */
+export async function listAttemptHistoryForTest(
+  testId: string,
+  studentId: string,
+  organizationId: string,
+) {
+  const test = await query(
+    `SELECT id, config FROM tests WHERE id = $1 AND organization_id = $2`,
+    [testId, organizationId],
+  );
+  if (!test.rows[0]) throw new NotFoundError('Test');
+  const config = parseExamConfig(test.rows[0].config);
+
+  const result = await query(
+    `SELECT
+       ta.id AS attempt_id,
+       ta.status,
+       ta.started_at,
+       ta.submitted_at,
+       ta.proctoring_flagged,
+       r.id AS result_id,
+       r.total_score,
+       r.max_score,
+       r.percentage,
+       r.rank
+     FROM test_attempts ta
+     LEFT JOIN results r ON r.attempt_id = ta.id
+     WHERE ta.test_id = $1 AND ta.student_id = $2
+     ORDER BY ta.started_at ASC`,
+    [testId, studentId],
+  );
+
+  let officialAttemptId: string | null = null;
+  const completed = result.rows.filter(
+    (r) => r.status === 'submitted' || r.status === 'auto_submitted',
+  );
+  if (completed.length > 0) {
+    if (config.scoringPolicy === 'highest') {
+      officialAttemptId = [...completed].sort(
+        (a, b) => Number(b.percentage ?? 0) - Number(a.percentage ?? 0),
+      )[0]?.attempt_id as string;
+    } else {
+      officialAttemptId = completed[completed.length - 1]?.attempt_id as string;
+    }
+  }
+
+  return {
+    scoring_policy: config.scoringPolicy,
+    max_attempts: config.maxAttempts,
+    official_attempt_id: officialAttemptId,
+    attempts: result.rows.map((row, index) => ({
+      ...row,
+      attempt_number: index + 1,
+      is_official: row.attempt_id === officialAttemptId,
+    })),
+  };
+}

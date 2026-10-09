@@ -1,0 +1,60 @@
+{
+  "name": "edutech-api",
+  "version": "1.0.0",
+  "description": "Enterprise Online Examination Platform API",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc && node -e \"const fs=require('fs');const p=require('path');const s=p.join('src','assets','email');const d=p.join('dist','assets','email');fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s))fs.copyFileSync(p.join(s,f),p.join(d,f));\"",
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/scripts/migrate.ts",
+    "seed": "tsx src/scripts/seed.ts",
+    "db:seed": "tsx src/scripts/seed.ts",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "test:phase1": "tsx src/scripts/test-phase1.ts",
+    "test:negative": "tsx src/scripts/test-negative-phase1.ts",
+    "test:superadmin": "tsx src/scripts/test-superadmin-crud.ts",
+    "test:all": "tsx src/scripts/test-phase1.ts && tsx src/scripts/test-negative-phase1.ts && tsx src/scripts/test-superadmin-crud.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "edutech",
+    "examination",
+    "lms"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "compression": "^1.8.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.24.4",
+    "nodemailer": "^9.0.3",
+    "pdfkit": "^0.20.2",
+    "razorpay": "^2.9.6",
+    "uuid": "^11.1.0",
+    "zod": "^3.25.28"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.7.5",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.15.21",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pdfkit": "^0.17.6",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

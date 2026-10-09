@@ -1,0 +1,417 @@
+import { query, withTransaction, type DbRow } from '../config/database.js';
+import { hashPassword } from '../utils/security.js';
+import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors.js';
+import { PaginatedResult } from '../types/express.js';
+import { assertEnrollmentNoAvailable, resolveEnrollmentNo, suggestEnrollmentNo } from './enrollment.service.js';
+import * as notificationService from './notification.service.js';
+
+const ALLOWED_ASSIGN_ROLES = new Set(['student', 'teacher', 'org_admin', 'staff']);
+
+function parseJsonArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (value == null || value === '') return [];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function assertBranchInOrg(branchId: string | undefined, organizationId: string) {
+  if (!branchId) return;
+  const branch = await query<{ organization_id: string }>(
+    `SELECT organization_id FROM branches WHERE id = $1 AND deleted_at IS NULL`,
+    [branchId],
+  );
+  if (!branch.rows[0] || branch.rows[0].organization_id !== organizationId) {
+    throw new ForbiddenError('Branch does not belong to the selected organization');
+  }
+}
+
+export async function listUsers(
+  organizationId: string,
+  page: number,
+  limit: number,
+  filters?: { role?: string; search?: string },
+) {
+  const offset = (page - 1) * limit;
+  const params: unknown[] = [organizationId];
+  let where = 'u.organization_id = $1 AND u.deleted_at IS NULL';
+  if (filters?.search) {
+    params.push(`%${filters.search}%`);
+    where += ` AND (u.email ILIKE $${params.length} OR u.first_name ILIKE $${params.length} OR u.last_name ILIKE $${params.length})`;
+  }
+  if (filters?.role) {
+    params.push(filters.role);
+    where += ` AND EXISTS (
+      SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = u.id AND r.name = $${params.length}
+    )`;
+  }
+  params.push(limit, offset);
+
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
+              st.admission_no AS enrollment_no,
+              COALESCE(
+                (SELECT CONCAT(
+                   '[',
+                   GROUP_CONCAT(CONCAT('"', REPLACE(r.name, '"', '\\"'), '"') ORDER BY r.name SEPARATOR ','),
+                   ']'
+                 )
+                 FROM user_roles ur
+                 JOIN roles r ON r.id = ur.role_id
+                 WHERE ur.user_id = u.id),
+                '[]'
+              ) AS roles
+       FROM users u
+       LEFT JOIN students st ON st.user_id = u.id
+       WHERE ${where}
+       ORDER BY u.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    ),
+    query(`SELECT COUNT(*)::int AS total FROM users u WHERE ${where}`, params.slice(0, -2)),
+  ]);
+  const total = count.rows[0].total as number;
+  return {
+    data: data.rows.map((row) => ({
+      ...row,
+      roles: parseJsonArray(row.roles),
+    })),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  } satisfies PaginatedResult<unknown>;
+}
+
+export async function getUser(userId: string, organizationId: string) {
+  const result = await query(
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
+            st.admission_no AS enrollment_no,
+            COALESCE(
+              (SELECT CONCAT(
+                 '[',
+                 GROUP_CONCAT(CONCAT('"', REPLACE(r.name, '"', '\\"'), '"') ORDER BY r.name SEPARATOR ','),
+                 ']'
+               )
+               FROM user_roles ur
+               JOIN roles r ON r.id = ur.role_id
+               WHERE ur.user_id = u.id),
+              '[]'
+            ) AS roles
+     FROM users u
+     LEFT JOIN students st ON st.user_id = u.id
+     WHERE u.id = $1 AND u.organization_id = $2 AND u.deleted_at IS NULL`,
+    [userId, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('User');
+  return { ...result.rows[0], roles: parseJsonArray(result.rows[0].roles) };
+}
+
+export async function previewEnrollmentNumber(organizationId: string) {
+  const enrollmentNo = await suggestEnrollmentNo(organizationId);
+  return { enrollmentNo };
+}
+
+export async function createUser(
+  organizationId: string,
+  input: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    role: 'student' | 'teacher' | 'org_admin' | 'staff';
+    branchId?: string;
+    enrollmentNo?: string;
+  },
+) {
+  await assertBranchInOrg(input.branchId, organizationId);
+  const existing = await query(`SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`, [
+    input.email.toLowerCase(),
+  ]);
+  if (existing.rowCount) throw new ConflictError('Email already registered');
+
+  const passwordHash = await hashPassword(input.password);
+  return withTransaction(async (client) => {
+    const user = await client.query<DbRow>(
+      `INSERT INTO users (email, password_hash, first_name, last_name, phone, organization_id, branch_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+       RETURNING id, email, first_name, last_name, organization_id, status, created_at`,
+      [
+        input.email.toLowerCase(),
+        passwordHash,
+        input.firstName,
+        input.lastName,
+        input.phone ?? null,
+        organizationId,
+        input.branchId ?? null,
+      ],
+    );
+    const role = await client.query(`SELECT id FROM roles WHERE name = $1`, [input.role]);
+    if (!role.rows[0]) throw new NotFoundError('Role');
+    await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, [
+      user.rows[0].id,
+      role.rows[0].id,
+    ]);
+    let enrollmentNo: string | null = null;
+    if (input.role === 'student') {
+      enrollmentNo = await resolveEnrollmentNo(
+        organizationId,
+        input.enrollmentNo,
+        (sql, params) => client.query(sql, params),
+      );
+      await client.query(
+        `INSERT INTO students (user_id, organization_id, branch_id, admission_no, enrolled_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [user.rows[0].id, organizationId, input.branchId ?? null, enrollmentNo],
+      );
+    }
+    if (input.role === 'teacher') {
+      await client.query(
+        `INSERT INTO teachers (user_id, organization_id, branch_id) VALUES ($1, $2, $3)`,
+        [user.rows[0].id, organizationId, input.branchId ?? null],
+      );
+    }
+    return { ...user.rows[0], id: user.rows[0].id, roles: [input.role], enrollment_no: enrollmentNo };
+  }).then((created) => {
+    if (input.role === 'student') {
+      void notificationService.notifyUserInApp(
+        created.id as string,
+        'Welcome to Edumatra',
+        created.enrollment_no
+          ? `Your student account is ready. Enrollment No: ${created.enrollment_no}. Start exploring My Tests.`
+          : 'Your student account is ready. Start exploring My Tests.',
+        { type: 'account_created', enrollmentNo: created.enrollment_no },
+      );
+    }
+    return created;
+  });
+}
+
+export async function updateUser(
+  userId: string,
+  organizationId: string,
+  input: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    branchId?: string | null;
+    role?: 'student' | 'teacher' | 'org_admin' | 'staff';
+    enrollmentNo?: string;
+  },
+) {
+  if (input.branchId) await assertBranchInOrg(input.branchId, organizationId);
+
+  return withTransaction(async (client) => {
+    const existing = await client.query(
+      `SELECT id FROM users WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL`,
+      [userId, organizationId],
+    );
+    if (!existing.rows[0]) throw new NotFoundError('User');
+
+    const result = await client.query(
+      `UPDATE users SET
+         first_name = COALESCE($3, first_name),
+         last_name = COALESCE($4, last_name),
+         phone = COALESCE($5, phone),
+         branch_id = COALESCE($6, branch_id),
+         updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL
+       RETURNING id, email, first_name, last_name, phone, status, branch_id`,
+      [
+        userId,
+        organizationId,
+        input.firstName ?? null,
+        input.lastName ?? null,
+        input.phone ?? null,
+        input.branchId === undefined ? null : input.branchId,
+      ],
+    );
+
+    if (input.role) {
+      if (!ALLOWED_ASSIGN_ROLES.has(input.role)) {
+        throw new ForbiddenError('Cannot assign this role');
+      }
+      const role = await client.query(`SELECT id FROM roles WHERE name = $1`, [input.role]);
+      if (!role.rows[0]) throw new NotFoundError('Role');
+      await client.query(
+        `DELETE ur FROM user_roles ur
+         JOIN roles r ON ur.role_id = r.id
+         WHERE ur.user_id = $1
+           AND r.name IN ('student', 'teacher', 'org_admin', 'staff')`,
+        [userId],
+      );
+      await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [
+        userId,
+        role.rows[0].id,
+      ]);
+
+      if (input.role === 'student') {
+        await client.query(
+          `INSERT INTO students (user_id, organization_id, branch_id)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id) DO UPDATE SET branch_id = EXCLUDED.branch_id`,
+          [userId, organizationId, input.branchId ?? null],
+        );
+      }
+      if (input.role === 'teacher') {
+        await client.query(
+          `INSERT INTO teachers (user_id, organization_id, branch_id)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id) DO UPDATE SET branch_id = EXCLUDED.branch_id`,
+          [userId, organizationId, input.branchId ?? null],
+        );
+      }
+    }
+
+    if (input.enrollmentNo !== undefined) {
+      const studentRow = await client.query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
+      if (!studentRow.rows[0]) {
+        throw new ForbiddenError('Enrollment number can only be set for student accounts');
+      }
+      const admissionNo = await assertEnrollmentNoAvailable(
+        organizationId,
+        input.enrollmentNo,
+        userId,
+        (sql, params) => client.query(sql, params),
+      );
+      await client.query(
+        `UPDATE students SET admission_no = $2, updated_at = NOW() WHERE user_id = $1`,
+        [userId, admissionNo],
+      );
+    }
+
+    const enrollment = await client.query(
+      `SELECT admission_no AS enrollment_no FROM students WHERE user_id = $1`,
+      [userId],
+    );
+
+    return { ...result.rows[0], enrollment_no: enrollment.rows[0]?.enrollment_no ?? null };
+  });
+}
+
+export async function softDeleteUser(userId: string, organizationId: string) {
+  const result = await query(
+    `UPDATE users SET deleted_at = NOW(), status = 'inactive', updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL
+     RETURNING id, email`,
+    [userId, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('User');
+  return { message: 'User deleted', ...result.rows[0] };
+}
+
+/** Permanently remove a user and org-scoped profile rows. */
+export async function hardDeleteUser(userId: string, organizationId: string) {
+  return withTransaction(async (client) => {
+    const existing = await client.query(
+      `SELECT id, email FROM users
+       WHERE id = $1 AND organization_id = $2`,
+      [userId, organizationId],
+    );
+    if (!existing.rows[0]) throw new NotFoundError('User');
+
+    await client.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM otp_codes WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM user_roles WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM notifications WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM teachers WHERE user_id = $1`, [userId]);
+
+    const student = await client.query(`SELECT id FROM students WHERE user_id = $1`, [userId]);
+    const studentId = student.rows[0]?.id as string | undefined;
+    if (studentId) {
+      await client.query(
+        `DELETE FROM attempt_answers WHERE attempt_id IN (
+           SELECT id FROM test_attempts WHERE student_id = $1
+         )`,
+        [studentId],
+      );
+      await client.query(`DELETE FROM results WHERE student_id = $1`, [studentId]);
+      await client.query(`DELETE FROM test_attempts WHERE student_id = $1`, [studentId]);
+      await client.query(
+        `DELETE FROM test_assignments WHERE assignee_type = 'student' AND assignee_id = $1`,
+        [studentId],
+      );
+      await client.query(`DELETE FROM students WHERE id = $1`, [studentId]);
+    }
+
+    await client.query(`DELETE FROM users WHERE id = $1 AND organization_id = $2`, [
+      userId,
+      organizationId,
+    ]);
+
+    return { message: 'User permanently deleted', id: userId, email: existing.rows[0].email };
+  });
+}
+
+export async function assignRole(userId: string, roleName: string, organizationId: string) {
+  if (!ALLOWED_ASSIGN_ROLES.has(roleName)) {
+    throw new ForbiddenError('Cannot assign this role');
+  }
+  const user = await query(
+    `SELECT id FROM users WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL`,
+    [userId, organizationId],
+  );
+  if (!user.rows[0]) throw new NotFoundError('User');
+  const role = await query(`SELECT id FROM roles WHERE name = $1`, [roleName]);
+  if (!role.rows[0]) throw new NotFoundError('Role');
+  await query(
+    `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [userId, role.rows[0].id],
+  );
+  return { message: 'Role assigned' };
+}
+
+export async function revokeRole(userId: string, roleName: string, organizationId: string) {
+  if (!ALLOWED_ASSIGN_ROLES.has(roleName)) {
+    throw new ForbiddenError('Cannot revoke this role');
+  }
+  await query(
+    `DELETE ur FROM user_roles ur
+     JOIN roles r ON ur.role_id = r.id
+     JOIN users u ON ur.user_id = u.id
+     WHERE ur.user_id = $1 AND r.name = $2 AND u.organization_id = $3`,
+    [userId, roleName, organizationId],
+  );
+  return { message: 'Role revoked' };
+}
+
+export async function updateUserStatus(
+  userId: string,
+  status: 'active' | 'inactive' | 'suspended',
+  organizationId: string,
+) {
+  const result = await query(
+    `UPDATE users SET status = $2, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $3 AND deleted_at IS NULL
+     RETURNING id, email, status`,
+    [userId, status, organizationId],
+  );
+  if (!result.rows[0]) throw new NotFoundError('User');
+
+  const isStudent = await query(
+    `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+     WHERE ur.user_id = $1 AND r.name = 'student' LIMIT 1`,
+    [userId],
+  );
+  if (isStudent.rows[0]) {
+    const labels: Record<string, string> = {
+      active: 'Your account has been activated. You can log in and take tests.',
+      inactive: 'Your account has been deactivated. Contact your institute if this is unexpected.',
+      suspended: 'Your account has been suspended. Contact your institute for help.',
+    };
+    void notificationService.notifyUserInApp(
+      userId,
+      `Account ${status}`,
+      labels[status] ?? `Your account status is now ${status}.`,
+      { type: 'account_status', status },
+    );
+  }
+
+  return result.rows[0];
+}

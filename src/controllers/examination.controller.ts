@@ -1,0 +1,614 @@
+import { Request, Response, NextFunction } from 'express';
+import { vQuery, vParams } from '../middleware/validate.js';
+import { resolveOrganizationId } from '../utils/orgAccess.js';
+import { ForbiddenError } from '../utils/errors.js';
+import * as subjectService from '../services/subject.service.js';
+import * as questionService from '../services/question.service.js';
+import * as questionImportService from '../services/questionImport.service.js';
+import * as testService from '../services/test.service.js';
+import * as attemptService from '../services/attempt.service.js';
+import * as analyticsService from '../services/analytics.service.js';
+
+async function orgContext(req: Request) {
+  const isSuperAdmin = req.user!.roles.includes('super_admin');
+  const orgId = await resolveOrganizationId(req.user!.organizationId, isSuperAdmin, req);
+  return { orgId, userId: req.user!.id, isSuperAdmin };
+}
+
+export async function listSubjects(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, departmentId } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      departmentId?: string;
+    };
+    const result = await subjectService.listSubjects(orgId, page, limit, departmentId);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const subject = await subjectService.createSubject(orgId, req.body);
+    res.status(201).json({ success: true, data: subject });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listChapters(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { subjectId } = vParams(req) as { subjectId: string };
+    const chapters = await subjectService.listChapters(subjectId, orgId);
+    res.json({ success: true, data: chapters });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createChapter(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { subjectId } = vParams(req) as { subjectId: string };
+    const chapter = await subjectService.createChapter(subjectId, orgId, req.body);
+    res.status(201).json({ success: true, data: chapter });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listTopics(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { chapterId } = vParams(req) as { chapterId: string };
+    const topics = await subjectService.listTopics(chapterId, orgId);
+    res.json({ success: true, data: topics });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createTopic(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { chapterId } = vParams(req) as { chapterId: string };
+    const topic = await subjectService.createTopic(chapterId, orgId, req.body);
+    res.status(201).json({ success: true, data: topic });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listTopicsForSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { subjectId } = vParams(req) as { subjectId: string };
+    const topics = await subjectService.listTopicsForSubject(subjectId, orgId);
+    res.json({ success: true, data: topics });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createTopicForSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { subjectId } = vParams(req) as { subjectId: string };
+    const topic = await subjectService.createTopicForSubject(subjectId, orgId, req.body);
+    res.status(201).json({ success: true, data: topic });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listQuestions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, status, type } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      status?: string;
+      type?: string;
+    };
+    const result = await questionService.listQuestions(orgId, page, limit, { status, type });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const question = await questionService.getQuestionById(id, orgId);
+    res.json({ success: true, data: question });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = await orgContext(req);
+    const question = await questionService.createQuestion(orgId, userId, req.body);
+    res.status(201).json({ success: true, data: question });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const question = await questionService.updateQuestion(id, orgId, req.body);
+    res.json({ success: true, data: question });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function deleteQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const result = await questionService.deleteQuestion(id, orgId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function approveQuestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const question = await questionService.approveQuestion(id, orgId, userId);
+    res.json({ success: true, data: question });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function downloadQuestionImportTemplate(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="question-bank-import-example.csv"');
+    res.send(questionImportService.QUESTION_IMPORT_CSV_TEMPLATE);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function importQuestions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = await orgContext(req);
+    const csvText = String(req.body?.csvText ?? '');
+    const summary = await questionImportService.importQuestionsFromCsv(orgId, userId, csvText);
+    res.json({ success: true, data: summary });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listCategories(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const categories = await questionService.listCategories(orgId);
+    res.json({ success: true, data: categories });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createCategory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const category = await questionService.createCategory(orgId, req.body);
+    res.status(201).json({ success: true, data: category });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listTests(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, status } = vQuery(req) as unknown as { page: number; limit: number; status?: string };
+    const result = await testService.listTests(orgId, page, limit, status);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const [test, assignments] = await Promise.all([
+      testService.getTestById(id, orgId),
+      testService.listTestAssignments(id, orgId),
+    ]);
+    res.json({ success: true, data: { ...test, assignments } });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAssignableStudents(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, departmentId } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      departmentId?: string;
+    };
+    const result = await testService.listAssignableStudents(orgId, page, limit, departmentId);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId, userId } = await orgContext(req);
+    const test = await testService.createTest(orgId, userId, req.body);
+    res.status(201).json({ success: true, data: test });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const test = await testService.updateTest(id, orgId, req.body);
+    res.json({ success: true, data: test });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function deleteTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const result = await testService.deleteTest(id, orgId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function addTestSection(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const section = await testService.addTestSection(id, orgId, req.body);
+    res.status(201).json({ success: true, data: section });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function addQuestionToTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const row = await testService.addQuestionToTest(id, orgId, req.body);
+    res.status(201).json({ success: true, data: row });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function removeQuestionFromTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id, questionId } = vParams(req) as { id: string; questionId: string };
+    const result = await testService.removeQuestionFromTest(id, orgId, questionId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function reorderTestQuestions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { questionIds } = req.body as { questionIds: string[] };
+    const test = await testService.reorderTestQuestions(id, orgId, questionIds);
+    res.json({ success: true, data: test });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function publishTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const body = (req.body ?? {}) as {
+      mode?: 'live_now' | 'schedule';
+      scheduledStart?: string | null;
+      scheduledEnd?: string | null;
+    };
+    const test = await testService.publishTest(id, orgId, body);
+    res.json({ success: true, data: test });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function assignTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { studentId, scheduledAt } = req.body as { studentId: string; scheduledAt?: string };
+    const assignment = await testService.assignTestToStudent(id, orgId, studentId, scheduledAt);
+    res.status(201).json({ success: true, data: assignment });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function unassignStudentFromTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id, studentId } = vParams(req) as { id: string; studentId: string };
+    const result = await testService.unassignStudentFromTest(id, orgId, studentId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listMyTests(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const tests = await testService.listStudentAssignedTests(studentId, orgId);
+    res.json({ success: true, data: tests });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAssignmentSummaries(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const data = await testService.listAssignmentSummaries(orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function startAttempt(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const attempt = await attemptService.startAttempt(testId, studentId, orgId);
+    res.status(201).json({ success: true, data: attempt });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getAttempt(req: Request, res: Response, next: NextFunction) {
+  try {
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const { id } = vParams(req) as { id: string };
+    const attempt = await attemptService.getAttemptForStudent(id, studentId);
+    res.json({ success: true, data: attempt });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function saveAnswer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const { id } = vParams(req) as { id: string };
+    const { questionId, answer, timeSpentSec } = req.body as {
+      questionId: string;
+      answer: Record<string, unknown>;
+      timeSpentSec?: number;
+    };
+    const saved = await attemptService.saveAnswer(id, studentId, questionId, answer, { timeSpentSec });
+    res.json({ success: true, data: saved });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function submitAttempt(req: Request, res: Response, next: NextFunction) {
+  try {
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const { id } = vParams(req) as { id: string };
+    const { autoSubmit } = req.body as { autoSubmit?: boolean };
+    const result = await attemptService.submitAttempt(id, studentId, { autoSubmit });
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function logProctoring(req: Request, res: Response, next: NextFunction) {
+  try {
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const { id } = vParams(req) as { id: string };
+    const { event, detail } = req.body as { event: string; detail?: Record<string, unknown> };
+    const data = await attemptService.logProctoringEvent(id, studentId, event, detail);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getResult(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { attemptId } = vParams(req) as { attemptId: string };
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
+    const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    const result = await attemptService.getResultByAttemptId(attemptId, orgId, {
+      hideAnswerKey: !isStaff,
+    });
+    if (!isStaff) {
+      const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+      if ((result as { student_id?: string }).student_id !== studentId) {
+        throw new ForbiddenError('Not allowed to view this result');
+      }
+    }
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAttempts(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, testId, studentId } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      testId?: string;
+      studentId?: string;
+    };
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
+    const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    let filterStudentId = studentId;
+    if (!isStaff) {
+      filterStudentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    }
+    const result = await attemptService.listAttempts(orgId, page, limit, {
+      testId,
+      studentId: filterStudentId,
+    });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getMyStats(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const stats = await attemptService.getStudentStats(studentId, orgId);
+    res.json({ success: true, data: stats });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listMyResults(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    const results = await attemptService.listStudentResults(studentId, orgId);
+    res.json({ success: true, data: results });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getAnalytics(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const stats = await analyticsService.getOrganizationStats(orgId);
+    res.json({ success: true, data: stats });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getTestAnalytics(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const data = await analyticsService.getTestAnalytics(testId, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getTestQuestionAnalytics(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const data = await analyticsService.getTestQuestionAnalytics(testId, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listFlaggedAttempts(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, reviewStatus } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      reviewStatus?: string;
+    };
+    const result = await attemptService.listFlaggedAttempts(orgId, page, limit, reviewStatus);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getAttemptProctoring(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const data = await attemptService.getAttemptProctoring(id, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateProctoringReview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { status } = req.body as { status: 'reviewed' | 'dismissed' | 'pending' };
+    const data = await attemptService.updateProctoringReview(id, orgId, status);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAttemptHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const { studentId: studentIdParam } = vQuery(req) as { studentId?: string };
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
+    const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    let studentId = studentIdParam;
+    if (!isStaff || !studentId) {
+      studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    }
+    const data = await attemptService.listAttemptHistoryForTest(testId, studentId!, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
