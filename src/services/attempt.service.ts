@@ -282,7 +282,7 @@ function getEndsAt(
 ): Date {
   return new Date(
     startedAt.getTime() +
-      durationMinutes * 60 * 1000,
+    durationMinutes * 60 * 1000,
   );
 }
 
@@ -400,8 +400,8 @@ export async function startAttempt(
   const testScheduledStart =
     test.rows[0].scheduled_start
       ? new Date(
-          test.rows[0].scheduled_start as string,
-        )
+        test.rows[0].scheduled_start as string,
+      )
       : null;
 
   /*
@@ -410,8 +410,8 @@ export async function startAttempt(
   const assignmentScheduledStart =
     assigned.rows[0].scheduled_at
       ? new Date(
-          assigned.rows[0].scheduled_at as string,
-        )
+        assigned.rows[0].scheduled_at as string,
+      )
       : null;
 
   /*
@@ -430,8 +430,8 @@ export async function startAttempt(
   const scheduledEnd =
     test.rows[0].scheduled_end
       ? new Date(
-          test.rows[0].scheduled_end as string,
-        )
+        test.rows[0].scheduled_end as string,
+      )
       : null;
 
   /*
@@ -441,7 +441,7 @@ export async function startAttempt(
     test.rows[0].status === 'scheduled' ||
     (effectiveScheduledStart &&
       effectiveScheduledStart.getTime() >
-        Date.now())
+      Date.now())
   ) {
     const opensAt =
       effectiveScheduledStart?.toISOString() ??
@@ -594,9 +594,8 @@ export async function startAttempt(
   void notificationService.notifyStudentByStudentId(
     studentId,
     'Exam started',
-    `You started "${
-      titleRow.rows[0]?.title ??
-      'the test'
+    `You started "${titleRow.rows[0]?.title ??
+    'the test'
     }". Good luck!`,
     {
       testId,
@@ -759,9 +758,9 @@ export async function getAttemptForStudent(
   const remainingSeconds =
     row.status === 'in_progress'
       ? getRemainingSeconds(
-          startedAt,
-          duration,
-        )
+        startedAt,
+        duration,
+      )
       : 0;
 
   return {
@@ -1554,8 +1553,8 @@ export async function getResultByAttemptId(
         id: string;
         content: unknown;
         is_correct:
-          | boolean
-          | number;
+        | boolean
+        | number;
         sort_order: number;
       }>(
         `SELECT
@@ -1640,17 +1639,17 @@ export async function getResultByAttemptId(
     proctoring_review_status: attemptMeta.rows[0]?.proctoring_review_status ?? 'none',
     ...(includeProctoring
       ? {
-          proctoring_timeline: proctorLog,
-          proctoring_summary: proctorSummary,
-        }
+        proctoring_timeline: proctorLog,
+        proctoring_summary: proctorSummary,
+      }
       : {
-          proctoring_summary: {
-            flagged: proctorSummary.flagged,
-            tab_switches: proctorSummary.tab_switches,
-            fullscreen_exits: proctorSummary.fullscreen_exits,
-            copy_paste_attempts: proctorSummary.copy_paste_attempts,
-          },
-        }),
+        proctoring_summary: {
+          flagged: proctorSummary.flagged,
+          tab_switches: proctorSummary.tab_switches,
+          fullscreen_exits: proctorSummary.fullscreen_exits,
+          copy_paste_attempts: proctorSummary.copy_paste_attempts,
+        },
+      }),
 
     questions:
       questions.rows.map((q) => {
@@ -1671,17 +1670,17 @@ export async function getResultByAttemptId(
 
           is_correct: showKey
             ? isTruthyFlag(
-                q.is_correct,
-              )
+              q.is_correct,
+            )
             : null,
 
           options: showKey
             ? opts
             : opts.map((o) => ({
-                ...o,
-                is_correct:
-                  undefined,
-              })),
+              ...o,
+              is_correct:
+                undefined,
+            })),
         };
       }),
   };
@@ -2090,6 +2089,42 @@ export async function listAttemptHistoryForTest(
   );
 
   let officialAttemptId: string | null = null;
+
+  const completed = result.rows.filter(
+    (r) => r.status === 'submitted' || r.status === 'auto_submitted',
+  );
+
+  if (completed.length > 0) {
+    if (config.scoringPolicy === 'highest') {
+      officialAttemptId = [...completed].sort(
+        (a, b) => Number(b.percentage ?? 0) - Number(a.percentage ?? 0),
+      )[0]?.attempt_id as string;
+    } else {
+      officialAttemptId = completed[completed.length - 1]?.attempt_id as string;
+    }
+  }
+
+  const completedAttempts = completed.length;
+
+  const attemptsRemaining = Math.max(
+    0,
+    config.maxAttempts - completedAttempts,
+  );
+
+  return {
+    scoring_policy: config.scoringPolicy,
+    max_attempts: config.maxAttempts,
+    completed_attempts: completedAttempts,
+    attempts_remaining: attemptsRemaining,
+    official_attempt_id: officialAttemptId,
+    attempts: result.rows.map((row, index) => ({
+      ...row,
+      attempt_number: index + 1,
+      is_official: row.attempt_id === officialAttemptId,
+    })),
+  };
+
+  /* let officialAttemptId: string | null = null;
   const completed = result.rows.filter(
     (r) => r.status === 'submitted' || r.status === 'auto_submitted',
   );
@@ -2102,7 +2137,7 @@ export async function listAttemptHistoryForTest(
       officialAttemptId = completed[completed.length - 1]?.attempt_id as string;
     }
   }
-
+  
   return {
     scoring_policy: config.scoringPolicy,
     max_attempts: config.maxAttempts,
@@ -2112,5 +2147,5 @@ export async function listAttemptHistoryForTest(
       attempt_number: index + 1,
       is_official: row.attempt_id === officialAttemptId,
     })),
-  };
+  };*/
 }
