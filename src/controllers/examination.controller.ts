@@ -421,8 +421,12 @@ export async function saveAnswer(req: Request, res: Response, next: NextFunction
   try {
     const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
     const { id } = vParams(req) as { id: string };
-    const { questionId, answer } = req.body as { questionId: string; answer: Record<string, unknown> };
-    const saved = await attemptService.saveAnswer(id, studentId, questionId, answer);
+    const { questionId, answer, timeSpentSec } = req.body as {
+      questionId: string;
+      answer: Record<string, unknown>;
+      timeSpentSec?: number;
+    };
+    const saved = await attemptService.saveAnswer(id, studentId, questionId, answer, { timeSpentSec });
     res.json({ success: true, data: saved });
   } catch (e) {
     next(e);
@@ -536,6 +540,73 @@ export async function getTestAnalytics(req: Request, res: Response, next: NextFu
     const { orgId } = await orgContext(req);
     const { testId } = vParams(req) as { testId: string };
     const data = await analyticsService.getTestAnalytics(testId, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getTestQuestionAnalytics(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const data = await analyticsService.getTestQuestionAnalytics(testId, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listFlaggedAttempts(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { page, limit, reviewStatus } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      reviewStatus?: string;
+    };
+    const result = await attemptService.listFlaggedAttempts(orgId, page, limit, reviewStatus);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getAttemptProctoring(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const data = await attemptService.getAttemptProctoring(id, orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateProctoringReview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { id } = vParams(req) as { id: string };
+    const { status } = req.body as { status: 'reviewed' | 'dismissed' | 'pending' };
+    const data = await attemptService.updateProctoringReview(id, orgId, status);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAttemptHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const { testId } = vParams(req) as { testId: string };
+    const { studentId: studentIdParam } = vQuery(req) as { studentId?: string };
+    const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
+    const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
+    let studentId = studentIdParam;
+    if (!isStaff || !studentId) {
+      studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+    }
+    const data = await attemptService.listAttemptHistoryForTest(testId, studentId!, orgId);
     res.json({ success: true, data });
   } catch (e) {
     next(e);

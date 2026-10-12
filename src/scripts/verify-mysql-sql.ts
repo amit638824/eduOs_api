@@ -55,6 +55,34 @@ const samples: { name: string; sql: string; params?: unknown[] }[] = [
     params: ['a', 'q', '{}'],
   },
   {
+    name: 'multiline returning insert',
+    sql: `INSERT INTO test_attempts (
+       test_id,
+       student_id,
+       status
+     )
+     VALUES (
+       $1,
+       $2,
+       'in_progress'
+     )
+     RETURNING
+       id,
+       test_id,
+       student_id,
+       status,
+       started_at`,
+    params: ['t', 's'],
+  },
+  {
+    name: 'nulls last order rewrite',
+    sql: `SELECT id FROM test_assignments
+     WHERE test_id = $1 AND assignee_type = 'student' AND assignee_id = $2
+     ORDER BY (scheduled_at IS NULL), scheduled_at DESC
+     LIMIT 1`,
+    params: ['t', 's'],
+  },
+  {
     name: 'settings upsert',
     sql: `INSERT INTO settings (organization_id, \`key\`, value)
           VALUES ($1, $2, $3)

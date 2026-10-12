@@ -593,14 +593,19 @@ export async function listStudentAssignedTests(studentId: string, organizationId
   const result = await query(
     `SELECT t.id, t.title, t.description, t.status, t.duration_minutes,
             t.passing_marks, t.published_at, t.scheduled_start, t.scheduled_end,
-            t.total_marks,
+            t.total_marks, t.config,
             COALESCE(ta_assign.scheduled_at, t.scheduled_start) AS effective_scheduled_start,
             ta_assign.scheduled_at,
             latest.id AS attempt_id,
             latest.status AS attempt_status,
             latest.submitted_at AS attempt_submitted_at,
-            r.percentage AS result_percentage,
-            r.attempt_id AS result_attempt_id
+            (
+              SELECT COUNT(*)::int FROM test_attempts ta2
+              WHERE ta2.test_id = t.id AND ta2.student_id = $1
+                AND ta2.status IN ('submitted', 'auto_submitted')
+            ) AS submitted_attempt_count,
+            official.percentage AS result_percentage,
+            official.attempt_id AS result_attempt_id
      FROM (
        SELECT test_id, MAX(scheduled_at) AS scheduled_at
        FROM test_assignments
@@ -614,14 +619,29 @@ export async function listStudentAssignedTests(studentId: string, organizationId
        ORDER BY ta.started_at DESC
        LIMIT 1
      )
-     LEFT JOIN results r ON r.attempt_id = latest.id
+     LEFT JOIN results official ON official.id = (
+       SELECT r2.id FROM results r2
+       WHERE r2.test_id = t.id AND r2.student_id = $1
+       ORDER BY
+         CASE
+           WHEN JSON_UNQUOTE(JSON_EXTRACT(COALESCE(t.config, '{}'), '$.scoringPolicy')) = 'highest'
+             THEN r2.percentage
+           ELSE 0
+         END DESC,
+         r2.created_at DESC
+       LIMIT 1
+     )
      WHERE t.organization_id = $2
        AND t.status IN ('live', 'scheduled')
        AND t.archived_at IS NULL
      ORDER BY (t.published_at IS NULL), t.published_at DESC`,
     [studentId, organizationId],
   );
-  return result.rows;
+  return result.rows.map((row) => {
+    const { config, ...rest } = row as Record<string, unknown>;
+    void config;
+    return rest;
+  });
 }
 
 /** Teacher/admin view: tests with assignment & submission counts */

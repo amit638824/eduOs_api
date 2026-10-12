@@ -36,6 +36,8 @@ import {
   listAttemptsQuerySchema,
   listAssignableStudentsQuerySchema,
   reorderTestQuestionsSchema,
+  proctoringReviewSchema,
+  listFlaggedAttemptsQuerySchema,
 } from '../validators/schemas.js';
 
 import * as examController from '../controllers/examination.controller.js';
@@ -410,11 +412,33 @@ router.get(
 );
 
 router.get(
+  '/attempts/flagged',
+  validate(listFlaggedAttemptsQuerySchema, 'query'),
+  requirePermission('result', 'read'),
+  examController.listFlaggedAttempts,
+);
+
+router.get(
   '/attempts/:id',
   validate(uuidParamSchema, 'params'),
   forbidSuperAdmin('Super Admin cannot open live attempts'),
   requirePermission('attempt', 'manage'),
   examController.getAttempt,
+);
+
+router.get(
+  '/attempts/:id/proctoring',
+  validate(uuidParamSchema, 'params'),
+  requirePermission('result', 'read'),
+  examController.getAttemptProctoring,
+);
+
+router.patch(
+  '/attempts/:id/proctoring-review',
+  validate(uuidParamSchema, 'params'),
+  validate(proctoringReviewSchema),
+  requirePermission('result', 'read'),
+  examController.updateProctoringReview,
 );
 
 router.post(
@@ -476,6 +500,21 @@ router.get(
   validate(testIdParam, 'params'),
   requirePermission('analytics', 'read'),
   examController.getTestAnalytics,
+);
+
+router.get(
+  '/analytics/tests/:testId/questions',
+  validate(testIdParam, 'params'),
+  requirePermission('analytics', 'read'),
+  examController.getTestQuestionAnalytics,
+);
+
+router.get(
+  '/tests/:testId/attempt-history',
+  validate(testIdParam, 'params'),
+  validate(z.object({ studentId: z.string().uuid().optional() }), 'query'),
+  requirePermission('result', 'read'),
+  examController.listAttemptHistory,
 );
 
 export default router;
