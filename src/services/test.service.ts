@@ -1,7 +1,71 @@
+
 import { query } from '../config/database.js';
-import { NotFoundError, ConflictError, ForbiddenError, ValidationError } from '../utils/errors.js';
+import {
+  NotFoundError,
+  ConflictError,
+  ForbiddenError,
+  ValidationError,
+} from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import * as notificationService from './notification.service.js';
+
+/**
+ * Normalize exam configuration so that:
+ * - Official exams allow exactly one attempt.
+ * - Practice exams allow 1–10 attempts.
+ * - Practice exams never enable certificates.
+ */
+function normalizeExamConfig(value: unknown): Record<string, unknown> {
+  let config: Record<string, unknown> = {};
+
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+      ) {
+        config = parsed as Record<string, unknown>;
+      }
+    } catch {
+      config = {};
+    }
+  } else if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  ) {
+    config = value as Record<string, unknown>;
+  }
+
+  const examType =
+    config.examType === 'practice' ? 'practice' : 'official';
+
+  const requestedAttempts = Number(config.maxAttempts ?? 1);
+
+  return {
+    ...config,
+    examType,
+    certificationEnabled:
+      examType === 'practice'
+        ? false
+        : config.certificationEnabled !== false,
+    maxAttempts:
+      examType === 'official'
+        ? 1
+        : Math.min(
+            10,
+            Math.max(
+              1,
+              Number.isFinite(requestedAttempts)
+                ? Math.trunc(requestedAttempts)
+                : 1,
+            ),
+          ),
+  };
+}
 
 export interface CreateTestInput {
   title: string;
@@ -22,49 +86,89 @@ export async function listTests(
 ) {
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
+
   let where = 'organization_id = $1 AND archived_at IS NULL';
+
   if (status) {
     params.push(status);
     where += ` AND status = $${params.length}`;
   }
+
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, title, description, status, duration_minutes, passing_marks, total_marks,
-              instructions, config, scheduled_start, scheduled_end, published_at, created_at, updated_at
-       FROM tests WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      `SELECT id, title, description, status, duration_minutes,
+              passing_marks, total_marks, instructions, config,
+              scheduled_start, scheduled_end, published_at,
+              created_at, updated_at
+       FROM tests
+       WHERE ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length - 1}
+       OFFSET $${params.length}`,
       params,
     ),
-    query(`SELECT COUNT(*)::int AS total FROM tests WHERE ${where}`, params.slice(0, -2)),
+    query(
+      `SELECT COUNT(*)::int AS total
+       FROM tests
+       WHERE ${where}`,
+      params.slice(0, -2),
+    ),
   ]);
+
   const total = count.rows[0].total as number;
+
   return {
-    data: data.rows,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    data: data.rows.map((row) => ({
+      ...row,
+      config: normalizeExamConfig(row.config),
+    })),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
   } satisfies PaginatedResult<unknown>;
 }
 
-export async function getTestById(id: string, organizationId: string) {
+export async function getTestById(
+  id: string,
+  organizationId: string,
+) {
   const test = await query(
-    `SELECT id, organization_id, title, description, status, config, instructions,
-            duration_minutes, passing_marks, total_marks, scheduled_start, scheduled_end,
+    `SELECT id, organization_id, title, description, status,
+            config, instructions, duration_minutes, passing_marks,
+            total_marks, scheduled_start, scheduled_end,
             published_at, created_at, updated_at
-     FROM tests WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL`,
+     FROM tests
+     WHERE id = $1
+       AND organization_id = $2
+       AND archived_at IS NULL`,
     [id, organizationId],
   );
-  if (!test.rows[0]) throw new NotFoundError('Test');
+
+  if (!test.rows[0]) {
+    throw new NotFoundError('Test');
+  }
 
   const [sections, questions] = await Promise.all([
     query(
-      `SELECT id, name, sort_order, config FROM test_sections WHERE test_id = $1 ORDER BY sort_order`,
+      `SELECT id, name, sort_order, config
+       FROM test_sections
+       WHERE test_id = $1
+       ORDER BY sort_order`,
       [id],
     ),
     query(
-      `SELECT tq.id, tq.section_id, tq.question_id, tq.sort_order, tq.marks_override,
+      `SELECT tq.id, tq.section_id, tq.question_id,
+              tq.sort_order, tq.marks_override,
               q.type, q.content, q.marks, q.difficulty
        FROM test_questions tq
-       LEFT JOIN questions q ON q.id = tq.question_id AND q.archived_at IS NULL
+       LEFT JOIN questions q
+         ON q.id = tq.question_id
+        AND q.archived_at IS NULL
        WHERE tq.test_id = $1
        ORDER BY tq.sort_order, tq.id`,
       [id],
@@ -72,8 +176,10 @@ export async function getTestById(id: string, organizationId: string) {
   ]);
 
   const assignments = await listTestAssignments(id, organizationId);
+
   return {
     ...test.rows[0],
+    config: normalizeExamConfig(test.rows[0].config),
     sections: sections.rows,
     questions: questions.rows.map((row) => ({
       ...row,
@@ -92,18 +198,29 @@ export async function getTestById(id: string, organizationId: string) {
   };
 }
 
-export async function listTestAssignments(testId: string, organizationId: string) {
+export async function listTestAssignments(
+  testId: string,
+  organizationId: string,
+) {
   await assertTestOrg(testId, organizationId);
+
   const result = await query(
-    `SELECT ta.id, ta.assignee_id AS student_id, ta.scheduled_at, ta.created_at,
-            u.email, u.first_name, u.last_name
+    `SELECT ta.id,
+            ta.assignee_id AS student_id,
+            ta.scheduled_at,
+            ta.created_at,
+            u.email,
+            u.first_name,
+            u.last_name
      FROM test_assignments ta
      JOIN students s ON s.id = ta.assignee_id
      JOIN users u ON u.id = s.user_id
-     WHERE ta.test_id = $1 AND ta.assignee_type = 'student'
+     WHERE ta.test_id = $1
+       AND ta.assignee_type = 'student'
      ORDER BY ta.created_at DESC`,
     [testId],
   );
+
   return result.rows;
 }
 
@@ -115,51 +232,87 @@ export async function listAssignableStudents(
 ) {
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
+
   let where =
-    's.organization_id = $1 AND u.deleted_at IS NULL AND u.status = \'active\'';
+    "s.organization_id = $1 AND u.deleted_at IS NULL AND u.status = 'active'";
+
   if (departmentId) {
     params.push(departmentId);
+
     where += ` AND EXISTS (
-      SELECT 1 FROM departments d
+      SELECT 1
+      FROM departments d
       WHERE d.id = $${params.length}
         AND d.deleted_at IS NULL
         AND d.branch_id = COALESCE(s.branch_id, u.branch_id)
     )`;
   }
+
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT s.id AS student_id, u.id AS user_id, u.email, u.first_name, u.last_name, u.status,
+      `SELECT s.id AS student_id,
+              u.id AS user_id,
+              u.email,
+              u.first_name,
+              u.last_name,
+              u.status,
               COALESCE(s.branch_id, u.branch_id) AS branch_id
        FROM students s
        INNER JOIN users u ON u.id = s.user_id
        WHERE ${where}
        ORDER BY u.first_name, u.last_name
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+       LIMIT $${params.length - 1}
+       OFFSET $${params.length}`,
       params,
     ),
     query(
-      `SELECT COUNT(*)::int AS total FROM students s
+      `SELECT COUNT(*)::int AS total
+       FROM students s
        INNER JOIN users u ON u.id = s.user_id
        WHERE ${where}`,
       params.slice(0, -2),
     ),
   ]);
+
   const total = count.rows[0].total as number;
+
   return {
     data: data.rows,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
   };
 }
 
-export async function createTest(organizationId: string, userId: string, input: CreateTestInput) {
+export async function createTest(
+  organizationId: string,
+  userId: string,
+  input: CreateTestInput,
+) {
+  const config = normalizeExamConfig(input.config);
+
   const result = await query(
     `INSERT INTO tests (
-       organization_id, created_by, title, description, duration_minutes, passing_marks,
-       instructions, config, scheduled_start, scheduled_end, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'draft')
-     RETURNING id, title, status, duration_minutes, created_at`,
+       organization_id,
+       created_by,
+       title,
+       description,
+       duration_minutes,
+       passing_marks,
+       instructions,
+       config,
+       scheduled_start,
+       scheduled_end,
+       status
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'draft')
+     RETURNING id, title, status, duration_minutes, config,
+               scheduled_start, scheduled_end, created_at`,
     [
       organizationId,
       userId,
@@ -168,60 +321,109 @@ export async function createTest(organizationId: string, userId: string, input: 
       input.durationMinutes ?? 60,
       input.passingMarks ?? null,
       input.instructions ?? null,
-      JSON.stringify(input.config ?? {}),
+      JSON.stringify(config),
       input.scheduledStart ?? null,
       input.scheduledEnd ?? null,
     ],
   );
-  return result.rows[0];
+
+  return {
+    ...result.rows[0],
+    config: normalizeExamConfig(result.rows[0].config),
+  };
 }
 
 export async function addTestSection(
   testId: string,
   organizationId: string,
-  input: { name: string; sortOrder?: number; config?: Record<string, unknown> },
+  input: {
+    name: string;
+    sortOrder?: number;
+    config?: Record<string, unknown>;
+  },
 ) {
   await assertTestOrg(testId, organizationId);
+
   const result = await query(
     `INSERT INTO test_sections (test_id, name, sort_order, config)
-     VALUES ($1, $2, $3, $4) RETURNING id, test_id, name, sort_order`,
-    [testId, input.name, input.sortOrder ?? 0, JSON.stringify(input.config ?? {})],
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, test_id, name, sort_order`,
+    [
+      testId,
+      input.name,
+      input.sortOrder ?? 0,
+      JSON.stringify(input.config ?? {}),
+    ],
   );
+
   return result.rows[0];
 }
 
 export async function addQuestionToTest(
   testId: string,
   organizationId: string,
-  input: { questionId: string; sectionId?: string; sortOrder?: number; marksOverride?: number },
+  input: {
+    questionId: string;
+    sectionId?: string;
+    sortOrder?: number;
+    marksOverride?: number;
+  },
 ) {
   await assertTestOrg(testId, organizationId);
+
   const qCheck = await query(
-    `SELECT id FROM questions WHERE id = $1 AND organization_id = $2 AND status = 'approved' AND archived_at IS NULL`,
+    `SELECT id
+     FROM questions
+     WHERE id = $1
+       AND organization_id = $2
+       AND status = 'approved'
+       AND archived_at IS NULL`,
     [input.questionId, organizationId],
   );
+
   if (!qCheck.rows[0]) {
-    throw new ForbiddenError('Question must be approved and belong to your organization');
+    throw new ForbiddenError(
+      'Question must be approved and belong to your organization',
+    );
   }
 
   if (input.sectionId) {
     const section = await query(
-      `SELECT ts.id FROM test_sections ts
+      `SELECT ts.id
+       FROM test_sections ts
        JOIN tests t ON t.id = ts.test_id
-       WHERE ts.id = $1 AND ts.test_id = $2 AND t.organization_id = $3`,
+       WHERE ts.id = $1
+         AND ts.test_id = $2
+         AND t.organization_id = $3`,
       [input.sectionId, testId, organizationId],
     );
-    if (!section.rows[0]) throw new ForbiddenError('Section does not belong to this test');
+
+    if (!section.rows[0]) {
+      throw new ForbiddenError(
+        'Section does not belong to this test',
+      );
+    }
   }
 
   try {
     const result = await query(
-      `INSERT INTO test_questions (test_id, section_id, question_id, sort_order, marks_override)
+      `INSERT INTO test_questions (
+         test_id, section_id, question_id, sort_order, marks_override
+       )
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (test_id, question_id) DO UPDATE
-         SET sort_order = COALESCE(EXCLUDED.sort_order, test_questions.sort_order),
-             marks_override = COALESCE(EXCLUDED.marks_override, test_questions.marks_override),
-             section_id = COALESCE(EXCLUDED.section_id, test_questions.section_id)
+         SET sort_order = COALESCE(
+               EXCLUDED.sort_order,
+               test_questions.sort_order
+             ),
+             marks_override = COALESCE(
+               EXCLUDED.marks_override,
+               test_questions.marks_override
+             ),
+             section_id = COALESCE(
+               EXCLUDED.section_id,
+               test_questions.section_id
+             )
        RETURNING id, test_id, question_id, section_id, sort_order`,
       [
         testId,
@@ -231,19 +433,33 @@ export async function addQuestionToTest(
         input.marksOverride ?? null,
       ],
     );
+
     await recalcTestTotalMarks(testId);
+
     return result.rows[0];
   } catch (err: unknown) {
-    if ((err as { code?: string; errno?: number }).code === 'ER_DUP_ENTRY' || (err as { errno?: number }).errno === 1062) {
-      // Race: treat as already present
+    const error = err as { code?: string; errno?: number };
+
+    if (
+      error.code === 'ER_DUP_ENTRY' ||
+      error.errno === 1062
+    ) {
       const existing = await query(
         `SELECT id, test_id, question_id, section_id, sort_order
-         FROM test_questions WHERE test_id = $1 AND question_id = $2`,
+         FROM test_questions
+         WHERE test_id = $1 AND question_id = $2`,
         [testId, input.questionId],
       );
-      if (existing.rows[0]) return existing.rows[0];
-      throw new ConflictError('Question already added to this test');
+
+      if (existing.rows[0]) {
+        return existing.rows[0];
+      }
+
+      throw new ConflictError(
+        'Question already added to this test',
+      );
     }
+
     throw err;
   }
 }
@@ -254,15 +470,25 @@ export async function removeQuestionFromTest(
   questionId: string,
 ) {
   await assertTestOrg(testId, organizationId);
+
   const result = await query(
     `DELETE FROM test_questions
      WHERE test_id = $1 AND question_id = $2
      RETURNING id`,
     [testId, questionId],
   );
-  if (!result.rows[0]) throw new NotFoundError('Test question');
+
+  if (!result.rows[0]) {
+    throw new NotFoundError('Test question');
+  }
+
   await recalcTestTotalMarks(testId);
-  return { testId, questionId, removed: true };
+
+  return {
+    testId,
+    questionId,
+    removed: true,
+  };
 }
 
 export async function reorderTestQuestions(
@@ -271,20 +497,36 @@ export async function reorderTestQuestions(
   questionIds: string[],
 ) {
   await assertTestOrg(testId, organizationId);
+
   const existing = await query<{ question_id: string }>(
-    `SELECT question_id FROM test_questions WHERE test_id = $1`,
+    `SELECT question_id
+     FROM test_questions
+     WHERE test_id = $1`,
     [testId],
   );
-  const onTest = new Set(existing.rows.map((r) => String(r.question_id)));
-  if (questionIds.length !== onTest.size || questionIds.some((id) => !onTest.has(id))) {
-    throw new ValidationError('questionIds must include every question currently on the test');
+
+  const onTest = new Set(
+    existing.rows.map((row) => String(row.question_id)),
+  );
+
+  if (
+    questionIds.length !== onTest.size ||
+    questionIds.some((id) => !onTest.has(id))
+  ) {
+    throw new ValidationError(
+      'questionIds must include every question currently on the test',
+    );
   }
+
   for (let i = 0; i < questionIds.length; i += 1) {
     await query(
-      `UPDATE test_questions SET sort_order = $3 WHERE test_id = $1 AND question_id = $2`,
+      `UPDATE test_questions
+       SET sort_order = $3
+       WHERE test_id = $1 AND question_id = $2`,
       [testId, questionIds[i], i],
     );
   }
+
   return getTestById(testId, organizationId);
 }
 
@@ -294,9 +536,18 @@ export async function updateTest(
   input: Partial<CreateTestInput & { status?: string }>,
 ) {
   await assertTestOrg(testId, organizationId);
+
   if (input.status === 'live') {
-    throw new ForbiddenError('Use the publish endpoint to set a test live');
+    throw new ForbiddenError(
+      'Use the publish endpoint to set a test live',
+    );
   }
+
+  const normalizedConfig =
+    input.config !== undefined
+      ? JSON.stringify(normalizeExamConfig(input.config))
+      : null;
+
   const result = await query(
     `UPDATE tests SET
        title = COALESCE($3, title),
@@ -309,8 +560,11 @@ export async function updateTest(
        scheduled_end = COALESCE($10, scheduled_end),
        status = COALESCE($11, status),
        updated_at = NOW()
-     WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL
-     RETURNING id, title, status, duration_minutes, config, scheduled_start, scheduled_end, updated_at`,
+     WHERE id = $1
+       AND organization_id = $2
+       AND archived_at IS NULL
+     RETURNING id, title, status, duration_minutes, config,
+               scheduled_start, scheduled_end, updated_at`,
     [
       testId,
       organizationId,
@@ -319,39 +573,71 @@ export async function updateTest(
       input.durationMinutes ?? null,
       input.passingMarks ?? null,
       input.instructions ?? null,
-      input.config ? JSON.stringify(input.config) : null,
+      normalizedConfig,
       input.scheduledStart ?? null,
       input.scheduledEnd ?? null,
       input.status ?? null,
     ],
   );
-  if (!result.rows[0]) throw new NotFoundError('Test');
-  return result.rows[0];
+
+  if (!result.rows[0]) {
+    throw new NotFoundError('Test');
+  }
+
+  return {
+    ...result.rows[0],
+    config: normalizeExamConfig(result.rows[0].config),
+  };
 }
 
-export async function deleteTest(testId: string, organizationId: string) {
+export async function deleteTest(
+  testId: string,
+  organizationId: string,
+) {
   await assertTestOrg(testId, organizationId);
+
   const result = await query(
-    `UPDATE tests SET archived_at = NOW(), status = 'archived', updated_at = NOW()
-     WHERE id = $1 AND organization_id = $2 AND archived_at IS NULL
+    `UPDATE tests
+     SET archived_at = NOW(),
+         status = 'archived',
+         updated_at = NOW()
+     WHERE id = $1
+       AND organization_id = $2
+       AND archived_at IS NULL
      RETURNING id`,
     [testId, organizationId],
   );
-  if (!result.rows[0]) throw new NotFoundError('Test');
-  return { id: result.rows[0].id, deleted: true };
+
+  if (!result.rows[0]) {
+    throw new NotFoundError('Test');
+  }
+
+  return {
+    id: result.rows[0].id,
+    deleted: true,
+  };
 }
 
-/** Flip scheduled tests to live when their start time has arrived. */
-export async function activateDueScheduledTests(organizationId?: string) {
+/** Activate scheduled tests when their start time has arrived. */
+export async function activateDueScheduledTests(
+  organizationId?: string,
+) {
   const params: unknown[] = [];
   let orgFilter = '';
+
   if (organizationId) {
     params.push(organizationId);
     orgFilter = ` AND organization_id = $1`;
   }
-  const activated = await query<{ id: string; title: string }>(
+
+  const activated = await query<{
+    id: string;
+    title: string;
+  }>(
     `UPDATE tests
-     SET status = 'live', published_at = COALESCE(published_at, NOW()), updated_at = NOW()
+     SET status = 'live',
+         published_at = COALESCE(published_at, NOW()),
+         updated_at = NOW()
      WHERE status = 'scheduled'
        AND archived_at IS NULL
        AND scheduled_start IS NOT NULL
@@ -366,7 +652,10 @@ export async function activateDueScheduledTests(organizationId?: string) {
       test.id,
       'Test is now live',
       `"${test.title}" is live now. You can start the exam.`,
-      { testId: test.id, type: 'test_live' },
+      {
+        testId: test.id,
+        type: 'test_live',
+      },
     );
   }
 }
@@ -381,43 +670,86 @@ export async function publishTest(
   },
 ) {
   await assertTestOrg(testId, organizationId);
+
   const qCount = await query(
-    `SELECT COUNT(*)::int AS cnt FROM test_questions WHERE test_id = $1`,
+    `SELECT COUNT(*)::int AS cnt
+     FROM test_questions
+     WHERE test_id = $1`,
     [testId],
   );
+
   if ((qCount.rows[0].cnt as number) === 0) {
-    throw new ConflictError('Add at least one question before publishing');
+    throw new ConflictError(
+      'Add at least one question before publishing',
+    );
   }
 
   const mode = options?.mode ?? 'live_now';
-  let scheduledStart = options?.scheduledStart ? new Date(options.scheduledStart) : null;
-  let scheduledEnd = options?.scheduledEnd ? new Date(options.scheduledEnd) : null;
+
+  let scheduledStart = options?.scheduledStart
+    ? new Date(options.scheduledStart)
+    : null;
+
+  const scheduledEnd = options?.scheduledEnd
+    ? new Date(options.scheduledEnd)
+    : null;
 
   if (mode === 'schedule') {
-    if (!scheduledStart || Number.isNaN(scheduledStart.getTime())) {
-      throw new ConflictError('Choose a valid schedule date and time');
+    if (
+      !scheduledStart ||
+      Number.isNaN(scheduledStart.getTime())
+    ) {
+      throw new ConflictError(
+        'Choose a valid schedule date and time',
+      );
     }
+
     if (scheduledStart.getTime() <= Date.now() + 30_000) {
-      // If start is essentially now, go live immediately
       scheduledStart = null;
     }
-    if (scheduledEnd && scheduledStart && scheduledEnd.getTime() <= scheduledStart.getTime()) {
-      throw new ConflictError('End time must be after the start time');
+
+    if (
+      scheduledEnd &&
+      Number.isNaN(scheduledEnd.getTime())
+    ) {
+      throw new ConflictError(
+        'Choose a valid end date and time',
+      );
+    }
+
+    if (
+      scheduledEnd &&
+      scheduledStart &&
+      scheduledEnd.getTime() <= scheduledStart.getTime()
+    ) {
+      throw new ConflictError(
+        'End time must be after the start time',
+      );
     }
   }
 
   const goLive = mode === 'live_now' || !scheduledStart;
   const status = goLive ? 'live' : 'scheduled';
 
+  // Publishing changes status and scheduling dates only.
+  // It deliberately does not overwrite config.examType.
   const result = await query(
     `UPDATE tests SET
        status = $3::test_status,
-       published_at = CASE WHEN $3::text = 'live' THEN NOW() ELSE published_at END,
+       published_at = CASE
+         WHEN $3::text = 'live' THEN NOW()
+         ELSE published_at
+       END,
        scheduled_start = $4::timestamptz,
        scheduled_end = $5::timestamptz,
        updated_at = NOW()
-     WHERE id = $1 AND organization_id = $2 AND status IN ('draft', 'scheduled')
-     RETURNING id, status, published_at, scheduled_start, scheduled_end, title, duration_minutes, total_marks`,
+     WHERE id = $1
+       AND organization_id = $2
+       AND archived_at IS NULL
+       AND status IN ('draft', 'scheduled')
+     RETURNING id, status, published_at, scheduled_start,
+               scheduled_end, title, duration_minutes,
+               total_marks, config`,
     [
       testId,
       organizationId,
@@ -426,27 +758,47 @@ export async function publishTest(
       scheduledEnd?.toISOString() ?? null,
     ],
   );
-  if (!result.rows[0]) throw new NotFoundError('Test');
 
-  const title = String(result.rows[0].title ?? 'Test');
+  if (!result.rows[0]) {
+    throw new NotFoundError('Test');
+  }
+
+  const publishedTest = {
+  ...result.rows[0],
+  config: normalizeExamConfig(result.rows[0].config),
+} as Record<string, unknown>;
+
+const title = String(publishedTest['title'] ?? 'Test');
+
   if (goLive) {
     void notificationService.notifyAssignedStudents(
       testId,
       'New test published',
       `"${title}" is live now. Open My Tests to start.`,
-      { testId, type: 'test_published', status: 'live' },
+      {
+        testId,
+        type: 'test_published',
+        status: 'live',
+      },
     );
   } else {
-    const when = scheduledStart ? scheduledStart.toLocaleString() : 'the scheduled time';
+    const when = scheduledStart
+      ? scheduledStart.toLocaleString()
+      : 'the scheduled time';
+
     void notificationService.notifyAssignedStudents(
       testId,
       'Test scheduled',
       `"${title}" is scheduled and will open at ${when}.`,
-      { testId, type: 'test_scheduled', status: 'scheduled' },
+      {
+        testId,
+        type: 'test_scheduled',
+        status: 'scheduled',
+      },
     );
   }
 
-  return result.rows[0];
+  return publishedTest;
 }
 
 export async function assignTestToStudent(
@@ -465,7 +817,8 @@ export async function assignTestToStudent(
     `SELECT s.id, u.first_name, u.last_name
      FROM students s
      JOIN users u ON u.id = s.user_id
-     WHERE s.id = $1 AND s.organization_id = $2`,
+     WHERE s.id = $1
+       AND s.organization_id = $2`,
     [studentId, organizationId],
   );
 
@@ -474,36 +827,37 @@ export async function assignTestToStudent(
   }
 
   const result = await query(
-    `INSERT INTO test_assignments (test_id, assignee_type, assignee_id, scheduled_at)
+    `INSERT INTO test_assignments (
+       test_id, assignee_type, assignee_id, scheduled_at
+     )
      VALUES ($1, 'student', $2, $3)
-     RETURNING id, test_id, assignee_type, assignee_id, scheduled_at, created_at`,
+     RETURNING id, test_id, assignee_type, assignee_id,
+               scheduled_at, created_at`,
     [testId, studentId, scheduledAt ?? null],
   );
 
   const test = await query<{
-  title: string;
-  status: string;
-  duration_minutes: number | null;
-  scheduled_start: string | null;
-}>(
-  `SELECT title, status, duration_minutes, scheduled_start
-   FROM tests
-   WHERE id = $1`,
-  [testId],
-);
+    title: string;
+    status: string;
+    duration_minutes: number | null;
+    scheduled_start: string | null;
+  }>(
+    `SELECT title, status, duration_minutes, scheduled_start
+     FROM tests
+     WHERE id = $1`,
+    [testId],
+  );
 
   const title = test.rows[0]?.title ?? 'a test';
   const status = test.rows[0]?.status ?? '';
-  const durationMinutes = test.rows[0]?.duration_minutes ?? null;
+  const durationMinutes =
+    test.rows[0]?.duration_minutes ?? null;
 
   const firstName = student.rows[0].first_name ?? '';
   const lastName = student.rows[0].last_name ?? '';
-  const studentName = `${firstName} ${lastName}`.trim() || 'Student';
+  const studentName =
+    `${firstName} ${lastName}`.trim() || 'Student';
 
-  /*
-   * Prefer the assignment scheduled time when provided.
-   * Otherwise use the test's scheduled start time.
-   */
   const scheduledDateTime =
     scheduledAt ?? test.rows[0]?.scheduled_start ?? null;
 
@@ -527,7 +881,6 @@ export async function assignTestToStudent(
     }
   }
 
-  // Existing in-app notification
   void notificationService.notifyStudentByStudentId(
     studentId,
     'Test assigned',
@@ -541,7 +894,6 @@ export async function assignTestToStudent(
     },
   );
 
-  // New exam assignment email
   void notificationService.notifyStudentByStudentIdEmail({
     studentId,
     studentName,
@@ -561,47 +913,79 @@ export async function unassignStudentFromTest(
   studentId: string,
 ) {
   await assertTestOrg(testId, organizationId);
+
   const student = await query(
-    `SELECT id FROM students WHERE id = $1 AND organization_id = $2`,
+    `SELECT id
+     FROM students
+     WHERE id = $1 AND organization_id = $2`,
     [studentId, organizationId],
   );
-  if (!student.rows[0]) throw new NotFoundError('Student');
 
-  const test = await query<{ title: string }>(`SELECT title FROM tests WHERE id = $1`, [testId]);
+  if (!student.rows[0]) {
+    throw new NotFoundError('Student');
+  }
+
+  const test = await query<{ title: string }>(
+    `SELECT title FROM tests WHERE id = $1`,
+    [testId],
+  );
+
   const title = test.rows[0]?.title ?? 'a test';
 
   const result = await query(
     `DELETE FROM test_assignments
-     WHERE test_id = $1 AND assignee_type = 'student' AND assignee_id = $2
+     WHERE test_id = $1
+       AND assignee_type = 'student'
+       AND assignee_id = $2
      RETURNING id`,
     [testId, studentId],
   );
-  if (!result.rows[0]) throw new NotFoundError('Assignment');
+
+  if (!result.rows[0]) {
+    throw new NotFoundError('Assignment');
+  }
 
   void notificationService.notifyStudentByStudentId(
     studentId,
     'Test unassigned',
     `"${title}" is no longer assigned to you.`,
-    { testId, type: 'test_unassigned' },
+    {
+      testId,
+      type: 'test_unassigned',
+    },
   );
 
-  return { testId, studentId, removed: true };
+  return {
+    testId,
+    studentId,
+    removed: true,
+  };
 }
 
-export async function listStudentAssignedTests(studentId: string, organizationId: string) {
+export async function listStudentAssignedTests(
+  studentId: string,
+  organizationId: string,
+) {
   await activateDueScheduledTests(organizationId);
+
   const result = await query(
-    `SELECT t.id, t.title, t.description, t.status, t.duration_minutes,
-            t.passing_marks, t.published_at, t.scheduled_start, t.scheduled_end,
+    `SELECT t.id, t.title, t.description, t.status,
+            t.duration_minutes, t.passing_marks,
+            t.published_at, t.scheduled_start, t.scheduled_end,
             t.total_marks, t.config,
-            COALESCE(ta_assign.scheduled_at, t.scheduled_start) AS effective_scheduled_start,
+            COALESCE(
+              ta_assign.scheduled_at,
+              t.scheduled_start
+            ) AS effective_scheduled_start,
             ta_assign.scheduled_at,
             latest.id AS attempt_id,
             latest.status AS attempt_status,
             latest.submitted_at AS attempt_submitted_at,
             (
-              SELECT COUNT(*)::int FROM test_attempts ta2
-              WHERE ta2.test_id = t.id AND ta2.student_id = $1
+              SELECT COUNT(*)::int
+              FROM test_attempts ta2
+              WHERE ta2.test_id = t.id
+                AND ta2.student_id = $1
                 AND ta2.status IN ('submitted', 'auto_submitted')
             ) AS submitted_attempt_count,
             official.percentage AS result_percentage,
@@ -609,23 +993,33 @@ export async function listStudentAssignedTests(studentId: string, organizationId
      FROM (
        SELECT test_id, MAX(scheduled_at) AS scheduled_at
        FROM test_assignments
-       WHERE assignee_type = 'student' AND assignee_id = $1
+       WHERE assignee_type = 'student'
+         AND assignee_id = $1
        GROUP BY test_id
      ) ta_assign
      JOIN tests t ON t.id = ta_assign.test_id
      LEFT JOIN test_attempts latest ON latest.id = (
-       SELECT ta.id FROM test_attempts ta
-       WHERE ta.test_id = t.id AND ta.student_id = $1
+       SELECT ta.id
+       FROM test_attempts ta
+       WHERE ta.test_id = t.id
+         AND ta.student_id = $1
        ORDER BY ta.started_at DESC
        LIMIT 1
      )
      LEFT JOIN results official ON official.id = (
-       SELECT r2.id FROM results r2
-       WHERE r2.test_id = t.id AND r2.student_id = $1
+       SELECT r2.id
+       FROM results r2
+       WHERE r2.test_id = t.id
+         AND r2.student_id = $1
        ORDER BY
          CASE
-           WHEN JSON_UNQUOTE(JSON_EXTRACT(COALESCE(t.config, '{}'), '$.scoringPolicy')) = 'highest'
-             THEN r2.percentage
+           WHEN JSON_UNQUOTE(
+             JSON_EXTRACT(
+               COALESCE(t.config, '{}'),
+               '$.scoringPolicy'
+             )
+           ) = 'highest'
+           THEN r2.percentage
            ELSE 0
          END DESC,
          r2.created_at DESC
@@ -637,74 +1031,126 @@ export async function listStudentAssignedTests(studentId: string, organizationId
      ORDER BY (t.published_at IS NULL), t.published_at DESC`,
     [studentId, organizationId],
   );
-  return result.rows.map((row) => {
-    const { config, ...rest } = row as Record<string, unknown>;
-    void config;
-    return rest;
-  });
+
+  return result.rows.map((row) => ({
+    ...row,
+    config: normalizeExamConfig(row.config),
+  }));
 }
 
-/** Teacher/admin view: tests with assignment & submission counts */
-export async function listAssignmentSummaries(organizationId: string) {
+/** Teacher/admin view: tests with assignment and submission counts. */
+export async function listAssignmentSummaries(
+  organizationId: string,
+) {
   await activateDueScheduledTests(organizationId);
+
   const result = await query(
-    `SELECT t.id, t.title, t.status, t.total_marks, t.duration_minutes,
+    `SELECT t.id, t.title, t.status, t.config,
+            t.total_marks, t.duration_minutes,
             t.scheduled_start, t.scheduled_end, t.published_at,
             COUNT(DISTINCT ta.id)::int AS assigned_count,
             COUNT(DISTINCT att.id)::int AS attempt_count,
-            COUNT(DISTINCT CASE WHEN att.status IN ('submitted', 'auto_submitted') THEN att.id END)::int AS submitted_count
+            COUNT(
+              DISTINCT CASE
+                WHEN att.status IN ('submitted', 'auto_submitted')
+                THEN att.id
+              END
+            )::int AS submitted_count
      FROM tests t
-     LEFT JOIN test_assignments ta ON ta.test_id = t.id AND ta.assignee_type = 'student'
+     LEFT JOIN test_assignments ta
+       ON ta.test_id = t.id
+      AND ta.assignee_type = 'student'
      LEFT JOIN test_attempts att ON att.test_id = t.id
-     WHERE t.organization_id = $1 AND t.archived_at IS NULL
-     GROUP BY t.id, t.title, t.status, t.total_marks, t.duration_minutes,
-              t.scheduled_start, t.scheduled_end, t.published_at, t.created_at
+     WHERE t.organization_id = $1
+       AND t.archived_at IS NULL
+     GROUP BY t.id, t.title, t.status, t.config,
+              t.total_marks, t.duration_minutes,
+              t.scheduled_start, t.scheduled_end,
+              t.published_at, t.created_at
      ORDER BY t.created_at DESC`,
     [organizationId],
   );
-  return result.rows;
+
+  return result.rows.map((row) => ({
+    ...row,
+    config: normalizeExamConfig(row.config),
+  }));
 }
 
 async function recalcTestTotalMarks(testId: string) {
   await query(
-    `UPDATE tests SET total_marks = (
-       SELECT COALESCE(SUM(COALESCE(tq.marks_override, q.marks)), 0)
-       FROM test_questions tq JOIN questions q ON q.id = tq.question_id
+    `UPDATE tests
+     SET total_marks = (
+       SELECT COALESCE(
+         SUM(COALESCE(tq.marks_override, q.marks)),
+         0
+       )
+       FROM test_questions tq
+       JOIN questions q ON q.id = tq.question_id
        WHERE tq.test_id = $1
-     ), updated_at = NOW() WHERE id = $1`,
+     ),
+     updated_at = NOW()
+     WHERE id = $1`,
     [testId],
   );
 
-  const testRow = await query(`SELECT COALESCE(total_marks, 0) AS total FROM tests WHERE id = $1`, [testId]);
+  const testRow = await query(
+    `SELECT COALESCE(total_marks, 0) AS total
+     FROM tests
+     WHERE id = $1`,
+    [testId],
+  );
+
   const maxScore = Number(testRow.rows[0]?.total) || 0;
 
   await query(
-    `UPDATE results SET
-       max_score = $2,
-       percentage = CASE WHEN $2::numeric > 0 THEN (total_score / $2::numeric) * 100 ELSE 0 END
+    `UPDATE results
+     SET max_score = $2,
+         percentage = CASE
+           WHEN $2::numeric > 0
+           THEN (total_score / $2::numeric) * 100
+           ELSE 0
+         END
      WHERE test_id = $1`,
     [testId, maxScore],
   );
 
-  const { applyRanksForTest } = await import('./ranking.service.js');
+  const { applyRanksForTest } =
+    await import('./ranking.service.js');
+
   await applyRanksForTest(testId);
 }
 
-/** Recalculate test totals (and stored result %) for every test that includes this question. */
-export async function recalcTestsForQuestion(questionId: string) {
+/** Recalculate totals and stored result percentages for tests
+ * that include this question.
+ */
+export async function recalcTestsForQuestion(
+  questionId: string,
+) {
   const tests = await query(
-    `SELECT DISTINCT test_id AS id FROM test_questions WHERE question_id = $1`,
+    `SELECT DISTINCT test_id AS id
+     FROM test_questions
+     WHERE question_id = $1`,
     [questionId],
   );
+
   for (const row of tests.rows) {
     await recalcTestTotalMarks(row.id as string);
   }
 }
 
-async function assertTestOrg(testId: string, organizationId: string) {
-  const result = await query(`SELECT id FROM tests WHERE id = $1 AND organization_id = $2`, [
-    testId,
-    organizationId,
-  ]);
-  if (!result.rows[0]) throw new NotFoundError('Test');
+async function assertTestOrg(
+  testId: string,
+  organizationId: string,
+) {
+  const result = await query(
+    `SELECT id
+     FROM tests
+     WHERE id = $1 AND organization_id = $2`,
+    [testId, organizationId],
+  );
+
+  if (!result.rows[0]) {
+    throw new NotFoundError('Test');
+  }
 }
