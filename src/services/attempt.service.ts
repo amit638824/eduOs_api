@@ -1895,70 +1895,135 @@ export async function listFlaggedAttempts(
   page: number,
   limit: number,
   reviewStatus?: string,
+  filters?: {
+    testId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    severity?: 'low' | 'medium' | 'high';
+  },
 ) {
-  const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
-  let where =
-    `t.organization_id = $1 AND ta.proctoring_flagged = 1`;
+
+  // Without a severity filter, preserve the existing flagged-only list.
+  // With a severity filter, include both flagged and unflagged attempts.
+  let where = `t.organization_id = $1`;
+
+  if (!filters?.severity) {
+    where += ` AND ta.proctoring_flagged = 1`;
+  }
+
   if (reviewStatus && reviewStatus !== 'all') {
     params.push(reviewStatus);
-    where += ` AND ta.proctoring_review_status = $${params.length}`;
+    const statusParam = `$${params.length}`;
+
+    if (filters?.severity) {
+      where += ` AND (
+        ta.proctoring_flagged = 0
+        OR ta.proctoring_review_status = ${statusParam}
+      )`;
+    } else {
+      where += ` AND ta.proctoring_review_status = ${statusParam}`;
+    }
   } else if (!reviewStatus) {
-    where += ` AND ta.proctoring_review_status = 'pending'`;
+    if (filters?.severity) {
+      where += ` AND (
+        ta.proctoring_flagged = 0
+        OR ta.proctoring_review_status = 'pending'
+      )`;
+    } else {
+      where += ` AND ta.proctoring_review_status = 'pending'`;
+    }
   }
-  params.push(limit, offset);
 
-  const [data, count] = await Promise.all([
-    query(
-      `SELECT
-         ta.id,
-         ta.test_id,
-         ta.student_id,
-         ta.status,
-         ta.started_at,
-         ta.submitted_at,
-         ta.proctoring_flagged,
-         ta.proctoring_review_status,
-         ta.proctoring_log,
-         t.title AS test_title,
-         t.config,
-         u.first_name,
-         u.last_name,
-         u.email,
-         r.percentage,
-         r.attempt_id AS result_attempt_id
-       FROM test_attempts ta
-       JOIN tests t ON t.id = ta.test_id
-       JOIN students s ON s.id = ta.student_id
-       JOIN users u ON u.id = s.user_id
-       LEFT JOIN results r ON r.attempt_id = ta.id
-       WHERE ${where}
-       ORDER BY ta.submitted_at DESC, ta.started_at DESC
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params,
-    ),
-    query(
-      `SELECT COUNT(*)::int AS total
-       FROM test_attempts ta
-       JOIN tests t ON t.id = ta.test_id
-       WHERE ${where}`,
-      params.slice(0, -2),
-    ),
-  ]);
+  if (filters?.testId) {
+    params.push(filters.testId);
+    where += ` AND ta.test_id = $${params.length}`;
+  }
 
-  const rows = data.rows.map((row) => {
+  if (filters?.dateFrom) {
+    params.push(filters.dateFrom);
+    where += ` AND COALESCE(ta.submitted_at, ta.started_at) >= $${params.length}::date`;
+  }
+
+  if (filters?.dateTo) {
+    params.push(filters.dateTo);
+    where += ` AND COALESCE(ta.submitted_at, ta.started_at) < ($${params.length}::date + INTERVAL '1 day')`;
+  }
+
+  const result = await query(
+    `SELECT
+       ta.id,
+       ta.test_id,
+       ta.student_id,
+       ta.status,
+       ta.started_at,
+       ta.submitted_at,
+       ta.proctoring_flagged,
+       ta.proctoring_review_status,
+       ta.proctoring_log,
+       t.title AS test_title,
+       t.config,
+       u.first_name,
+       u.last_name,
+       u.email,
+       r.percentage,
+       r.attempt_id AS result_attempt_id
+     FROM test_attempts ta
+     JOIN tests t ON t.id = ta.test_id
+     JOIN students s ON s.id = ta.student_id
+     JOIN users u ON u.id = s.user_id
+     LEFT JOIN results r ON r.attempt_id = ta.id
+     WHERE ${where}
+     ORDER BY ta.submitted_at DESC, ta.started_at DESC`,
+    params,
+  );
+
+  const rows = result.rows.map((row) => {
     const config = parseExamConfig(row.config);
     const log = normalizeProctoringLog(row.proctoring_log);
     const summary = summarizeProctoring(log, config);
-    const { proctoring_log: _log, config: _cfg, ...rest } = row as Record<string, unknown>;
+
+    const {
+      proctoring_log: _log,
+      config: _cfg,
+      ...rest
+    } = row as Record<string, unknown>;
+
     void _log;
     void _cfg;
-    return { ...rest, proctoring_summary: summary };
+
+    const totalViolations =
+      summary.tab_switches +
+      summary.fullscreen_exits +
+      summary.copy_paste_attempts;
+
+    const severity =
+      totalViolations >= 3
+        ? 'high'
+        : totalViolations === 2
+          ? 'medium'
+          : totalViolations === 1
+            ? 'low'
+            : null;
+
+    return {
+      ...rest,
+      proctoring_summary: summary,
+      total_violations: totalViolations,
+      severity,
+    };
   });
 
-  const total = Number(count.rows[0]?.total ?? 0);
+  const filteredRows = filters?.severity
+    ? rows.filter((row) => row.severity === filters.severity)
+    : rows;
+
+  const total = filteredRows.length;
+  const offset = (page - 1) * limit;
+  const paginatedRows = filteredRows.slice(offset, offset + limit);
+
   return {
-    data: rows,
+    data: paginatedRows,
     pagination: {
       page,
       limit,
@@ -1967,6 +2032,8 @@ export async function listFlaggedAttempts(
     },
   } satisfies PaginatedResult<unknown>;
 }
+
+
 
 export async function getAttemptProctoring(
   attemptId: string,

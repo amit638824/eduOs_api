@@ -556,21 +556,45 @@ export async function getTestQuestionAnalytics(req: Request, res: Response, next
     next(e);
   }
 }
-
-export async function listFlaggedAttempts(req: Request, res: Response, next: NextFunction) {
+export async function listFlaggedAttempts(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit, reviewStatus } = vQuery(req) as unknown as {
+    const {
+      page,
+      limit,
+      reviewStatus,
+      testId,
+      dateFrom,
+      dateTo,
+      severity,
+    } = vQuery(req) as unknown as {
       page: number;
       limit: number;
       reviewStatus?: string;
+      testId?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      severity?: 'low' | 'medium' | 'high';
     };
-    const result = await attemptService.listFlaggedAttempts(orgId, page, limit, reviewStatus);
+
+    const result = await attemptService.listFlaggedAttempts(
+      orgId,
+      page,
+      limit,
+      reviewStatus,
+      { testId, dateFrom, dateTo, severity },
+    );
+
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
   }
 }
+
 
 export async function getAttemptProctoring(req: Request, res: Response, next: NextFunction) {
   try {

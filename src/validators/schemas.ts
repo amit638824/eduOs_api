@@ -211,10 +211,14 @@ export const proctoringEventSchema = z.object({
 export const proctoringReviewSchema = z.object({
   status: z.enum(['reviewed', 'dismissed', 'pending']),
 });
-
 export const listFlaggedAttemptsQuerySchema = paginationSchema.extend({
   reviewStatus: z.enum(['pending', 'reviewed', 'dismissed', 'all']).optional(),
+  testId: z.string().uuid().optional(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  severity: z.enum(['low', 'medium', 'high']).optional(),
 });
+
 
 export const updateProfileSchema = z.object({
   firstName: z.string().min(1).max(100).trim().optional(),
