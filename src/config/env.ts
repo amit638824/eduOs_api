@@ -1,16 +1,28 @@
 import 'dotenv/config';
 
 /** Read string env with fallback — app won't crash if missing */
-function str(key: string, fallback = ''): string {
-  return process.env[key]?.trim() || fallback;
+function str(key: string | readonly string[], fallback = ''): string {
+  if (Array.isArray(key)) {
+    for (const k of key) {
+      const val = process.env[k]?.trim();
+      if (val) return val;
+    }
+    return fallback;
+  }
+  return process.env[key as string]?.trim() || fallback;
 }
 
 /** Read number env with fallback */
-function num(key: string, fallback: number): number {
-  const raw = process.env[key];
-  if (!raw?.trim()) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function num(key: string | readonly string[], fallback: number): number {
+  const keys = Array.isArray(key) ? key : [key];
+  for (const k of keys) {
+    const raw = process.env[k];
+    if (raw?.trim()) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return fallback;
 }
 
 /** Read boolean env (`true` / `1`) with fallback */
@@ -28,11 +40,14 @@ const NODE_ENV =
 
 /**
  * Production URLs — hardcoded for server deploy when .env is not uploaded.
- * Browser CORS for https://onlineexam.techwagger.com
+ * Browser CORS for mindsprint.techwagger.com, apimindsprint.techwagger.com, and onlineexam.techwagger.com
  */
-const PRODUCTION_FRONTEND_URL = 'https://onlineexam.techwagger.com';
+const PRODUCTION_FRONTEND_URL = 'https://mindsprint.techwagger.com';
 const PRODUCTION_CORS_ORIGINS = [
-  PRODUCTION_FRONTEND_URL,
+  'https://mindsprint.techwagger.com',
+  'https://www.mindsprint.techwagger.com',
+  'https://apimindsprint.techwagger.com',
+  'https://onlineexam.techwagger.com',
   'https://www.onlineexam.techwagger.com',
 ] as const;
 const LOCAL_CORS_ORIGINS = 'http://localhost:3000,http://localhost:5173';
@@ -59,11 +74,13 @@ export const env = {
   PORT: num('PORT', 3000),
 
   DB_TYPE: 'mysql' as const,
-  DB_HOST: str('DB_HOST', 'localhost'),
+  DB_HOST: str('DB_HOST', 's12078.use1.stableserver.net'),
   DB_PORT: num('DB_PORT', 3306),
-  DB_USERNAME: str('DB_USERNAME', 'root'),
-  DB_PASSWORD: str('DB_PASSWORD', ''),
-  DB_DATABASE: str('DB_DATABASE', 'edutech'),
+  DB_USERNAME: str(['DB_USERNAME', 'DB_USER'], 'techwagger_mindsprint_user'),
+  DB_USER: str(['DB_USER', 'DB_USERNAME'], 'techwagger_mindsprint_user'),
+  DB_PASSWORD: str('DB_PASSWORD', 'xFf}8=ltevWS9HPj'),
+  DB_DATABASE: str(['DB_DATABASE', 'DB_NAME'], 'techwagger_mindsprint_db'),
+  DB_NAME: str(['DB_NAME', 'DB_DATABASE'], 'techwagger_mindsprint_db'),
   DB_SSL: bool('DB_SSL', false),
   DB_SSL_REJECT_UNAUTHORIZED: bool('DB_SSL_REJECT_UNAUTHORIZED', false),
   DB_POOL_MAX: num('DB_POOL_MAX', 20),
@@ -122,23 +139,29 @@ export function frontendUrl(path = ''): string {
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-function warnMissing(keys: string[], level: 'warn' | 'error' = 'warn') {
-  const missing = keys.filter((k) => !process.env[k]?.trim());
+function warnMissing(keys: (string | readonly string[])[], level: 'warn' | 'error' = 'warn') {
+  const missing = keys.filter((k) => {
+    if (Array.isArray(k)) {
+      return !k.some((subKey) => process.env[subKey]?.trim());
+    }
+    return !process.env[k as string]?.trim();
+  });
   if (missing.length === 0) return;
-  const msg = `[env] Missing ${level === 'error' ? 'required' : 'recommended'} variables: ${missing.join(', ')}`;
+  const missingLabels = missing.map((k) => (Array.isArray(k) ? k.join('/') : k));
+  const msg = `[env] Missing ${level === 'error' ? 'required' : 'recommended'} variables: ${missingLabels.join(', ')}`;
   if (level === 'error') console.error(msg);
   else console.warn(msg);
 }
 
 if (NODE_ENV === 'production') {
-  warnMissing(['DB_HOST', 'DB_PASSWORD', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'], 'error');
+  warnMissing(['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'], 'warn');
   if (/localhost|127\.0\.0\.1/i.test(env.FRONTEND_URL)) {
     console.error(
       `[env] FRONTEND_URL is "${env.FRONTEND_URL}" in production — set FRONTEND_URL or FRONTEND_URL_PROD to ${FRONTEND_URL_PROD}`,
     );
   }
 } else {
-  warnMissing(['DB_PASSWORD', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']);
+  warnMissing(['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']);
 }
 
 
