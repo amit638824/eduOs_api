@@ -3,9 +3,9 @@ import { env } from '../config/env.js';
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
 /** Inline CID — email clients load these from attachments (not remote SPA URLs) */
 export const EMAIL_CID = {
-  logo: 'sca-logo@edutech',
-  dashboardCta: 'cta-dashboard@edutech',
-  resetCta: 'cta-reset@edutech',
+  logo: 'techwagger-logo@techwagger',
+  dashboardCta: 'cta-dashboard@techwagger',
+  resetCta: 'cta-reset@techwagger',
 } as const;
 /** Public live URLs (frontend /public) — keep in sync for browser checks after deploy */
 const CTA_DASHBOARD_LIVE =

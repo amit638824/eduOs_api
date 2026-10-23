@@ -98,7 +98,7 @@ export const env = {
   AUTH_RATE_LIMIT_MAX: num('AUTH_RATE_LIMIT_MAX', 10),
 
   BCRYPT_ROUNDS: num('BCRYPT_ROUNDS', 12),
-  APP_NAME: str('APP_NAME', 'Edumatra'),
+  APP_NAME: str('APP_NAME', 'Mindsprint'),
   TRUST_PROXY: num('TRUST_PROXY', 1),
 
   /** Used in email links (login, reset password, dashboard) */
@@ -106,7 +106,7 @@ export const env = {
   FRONTEND_URL_LOCAL,
   FRONTEND_URL_PROD,
   EMAIL_ASSET_BASE,
-  LOGO_URL: str('LOGO_URL', `${EMAIL_ASSET_BASE}/img/logo/sca-logo.png`),
+  LOGO_URL: str('LOGO_URL', `${EMAIL_ASSET_BASE}/img/logo/techwagger-logo.png`),
   EMAIL_CTA_DASHBOARD_PNG: str(
     'EMAIL_CTA_DASHBOARD_PNG',
     `${EMAIL_ASSET_BASE}/img/email/go-to-dashboard.png`,

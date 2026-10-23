@@ -2,7 +2,7 @@
 -- EduTech — wipe ALL app data EXCEPT 2 logins (MySQL 8)
 -- Keep:
 --   1) superadmin@edutech.com
---   2) supercomputeracademy@yopmail.com
+--   2) techwagger@yopmail.com
 --
 -- MySQL Workbench / phpMyAdmin:
 --   1) Select edutech database
@@ -18,7 +18,7 @@ FROM users
 WHERE email IN (
   'superadmin@edutech.com',
   'superadmin@edutech',
-  'supercomputeracademy@yopmail.com'
+  'techwagger@yopmail.com'
 );
 
 SET @keep_count := (SELECT COUNT(*) FROM keep_users);

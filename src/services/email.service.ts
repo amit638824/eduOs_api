@@ -77,7 +77,7 @@ function inlinePng(
 /** Always attach logo + CTA button PNGs so Gmail does not depend on SPA image routes */
 function emailInlineAttachments() {
   return [
-    inlinePng('sca-logo.png', EMAIL_CID.logo),
+    inlinePng('techwagger-logo.png', EMAIL_CID.logo) ?? inlinePng('sca-logo.png', EMAIL_CID.logo),
     inlinePng('go-to-dashboard.png', EMAIL_CID.dashboardCta),
     inlinePng('reset-password.png', EMAIL_CID.resetCta),
   ].filter((a): a is NonNullable<typeof a> => a != null);

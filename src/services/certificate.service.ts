@@ -36,7 +36,7 @@ function makeCertificateNo(orgSlugPart: string): string {
   const year = new Date().getFullYear();
   const randomPart = randomBytes(3).toString('hex').toUpperCase();
 
-  return `EDM-${year}-${orgSlugPart.slice(0, 6).toUpperCase()}-${randomPart}`;
+  return `MS-${year}-${orgSlugPart.slice(0, 6).toUpperCase()}-${randomPart}`;
 }
 
 function makeVerificationCode(): string {

@@ -1,7 +1,7 @@
 {
-  "name": "edutech-api",
+  "name": "mindsprint-api",
   "version": "1.0.0",
-  "description": "Enterprise Online Examination Platform API",
+  "description": "Mindsprint Enterprise Online Examination Platform API",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

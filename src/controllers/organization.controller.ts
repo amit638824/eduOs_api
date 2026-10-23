@@ -136,7 +136,7 @@ export async function updateOrganization(
           ? 'deactivated'
           : 'updated';
       const message = becameActive
-        ? 'Your organization access has been approved. Pending users are now active — you can log in and manage your academy.'
+        ? 'Your organization access has been approved. Pending users are now active — you can log in and manage your organization.'
         : becameInactive
           ? 'Your organization has been deactivated by Super Admin. Contact support if this is unexpected.'
           : 'Your organization details were updated by Super Admin on the platform.';
