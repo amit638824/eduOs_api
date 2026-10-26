@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import PDFDocument from 'pdfkit';
 
 import { query } from '../config/database.js';
@@ -657,14 +657,6 @@ export async function verifyCertificatePublic(
     };
   }
 
-  const fingerprint = createHash('sha256')
-    .update(
-      `${row.certificate_no}|${row.verification_code}|${row.result_id}`,
-    )
-    .digest('hex')
-    .slice(0, 16)
-    .toUpperCase();
-
   return {
     valid: true,
     message: 'Certificate is authentic',
@@ -674,11 +666,10 @@ export async function verifyCertificatePublic(
     issued_at: row.issued_at,
     student_name:
       `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+    enrollment_no: row.enrollment_no ?? null,
     test_title: row.test_title,
     organization: row.org_name,
     percentage: Number(row.percentage),
-    score: `${row.total_score}/${row.max_score}`,
-    fingerprint,
   };
 }
 
@@ -833,7 +824,7 @@ export async function buildCertificatePdf(
       .fontSize(12)
       .fillColor('#334155')
       .text(
-        `Score: ${cert.total_score}/${cert.max_score}  ·  Percentage: ${pct}%`,
+        `Percentage: ${pct}%`,
         50,
         295,
         {

@@ -1424,6 +1424,11 @@ export async function getResultByAttemptId(
     parseExamConfig(
       result.rows[0].config,
     );
+  const rawExamConfig = asJsonObject(result.rows[0].config) ?? {};
+  const examType =
+    rawExamConfig.examType === 'practice' || rawExamConfig.exam_type === 'practice'
+      ? 'practice'
+      : 'official';
 
   const defaultNegative =
     examConfig.negativeMarking
@@ -1635,6 +1640,7 @@ export async function getResultByAttemptId(
       examConfig.releaseAnswers,
     scoring_policy: examConfig.scoringPolicy,
     max_attempts: examConfig.maxAttempts,
+    exam_type: examType,
     proctoring_flagged: Boolean(attemptMeta.rows[0]?.proctoring_flagged) || proctorSummary.flagged,
     proctoring_review_status: attemptMeta.rows[0]?.proctoring_review_status ?? 'none',
     ...(includeProctoring
@@ -1904,8 +1910,9 @@ export async function listFlaggedAttempts(
 ) {
   const params: unknown[] = [organizationId];
 
-  // Without a severity filter, preserve the existing flagged-only list.
-  // With a severity filter, include both flagged and unflagged attempts.
+  // Without a severity filter, keep the flagged-only list.
+  // A review-status filter always applies, including when severity is set,
+  // so a dismissed attempt cannot remain on the pending list.
   let where = `t.organization_id = $1`;
 
   if (!filters?.severity) {
@@ -1914,25 +1921,9 @@ export async function listFlaggedAttempts(
 
   if (reviewStatus && reviewStatus !== 'all') {
     params.push(reviewStatus);
-    const statusParam = `$${params.length}`;
-
-    if (filters?.severity) {
-      where += ` AND (
-        ta.proctoring_flagged = 0
-        OR ta.proctoring_review_status = ${statusParam}
-      )`;
-    } else {
-      where += ` AND ta.proctoring_review_status = ${statusParam}`;
-    }
+    where += ` AND ta.proctoring_review_status = $${params.length}`;
   } else if (!reviewStatus) {
-    if (filters?.severity) {
-      where += ` AND (
-        ta.proctoring_flagged = 0
-        OR ta.proctoring_review_status = 'pending'
-      )`;
-    } else {
-      where += ` AND ta.proctoring_review_status = 'pending'`;
-    }
+    where += ` AND ta.proctoring_review_status = 'pending'`;
   }
 
   if (filters?.testId) {
