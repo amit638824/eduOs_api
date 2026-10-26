@@ -26,8 +26,6 @@ async function bootstrap() {
       const targets = [
         path.join(process.cwd(), 'src', 'assets', 'email', 'techwagger-logo.png'),
         path.join(process.cwd(), 'dist', 'assets', 'email', 'techwagger-logo.png'),
-        path.join(process.cwd(), 'src', 'assets', 'email', 'sca-logo.png'),
-        path.join(process.cwd(), 'dist', 'assets', 'email', 'sca-logo.png'),
       ];
       for (const t of targets) {
         fs.mkdirSync(path.dirname(t), { recursive: true });

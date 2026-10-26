@@ -1,41 +1,14 @@
 import { env } from '../config/env.js';
 
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
-/** Inline CID — email clients load these from attachments (not remote SPA URLs) */
-export const EMAIL_CID = {
-  logo: 'techwagger-logo@techwagger',
-  dashboardCta: 'cta-dashboard@techwagger',
-  resetCta: 'cta-reset@techwagger',
-} as const;
-/** Public live URLs (frontend /public) — keep in sync for browser checks after deploy */
-const CTA_DASHBOARD_LIVE =
-  env.EMAIL_CTA_DASHBOARD_PNG || `${env.EMAIL_ASSET_BASE}/img/email/go-to-dashboard.png`;
-const CTA_RESET_LIVE =
-  env.EMAIL_CTA_RESET_PNG || env.RESET_PASSWORD_PNG || `${env.EMAIL_ASSET_BASE}/img/email/reset-password.png`;
+/** Hosted TechWagger mark. Do not fall back to the old Super Computer logo. */
+const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/techwagger-logo.png';
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
-
-const EMAIL_STYLES = `
-@media only screen and (max-width: 620px) {
-  table.body h1 { font-size: 28px !important; margin-bottom: 10px !important; }
-  table.body p, table.body ul, table.body ol, table.body td, table.body span, table.body a { font-size: 16px !important; }
-  table.body .wrapper, table.body .article { padding: 10px !important; }
-  table.body .content { padding: 0 !important; }
-  table.body .container { padding: 0 !important; width: 100% !important; }
-  table.body .main { border-left-width: 0 !important; border-radius: 0 !important; border-right-width: 0 !important; }
-  table.body .btn table { width: 100% !important; }
-  table.body .btn a { width: 100% !important; }
-  table.body .img-responsive { height: auto !important; max-width: 100% !important; width: auto !important; }
-}
-@media all {
-  .ExternalClass { width: 100%; }
-  .ExternalClass, .ExternalClass p, .ExternalClass span, .ExternalClass font, .ExternalClass td, .ExternalClass div { line-height: 100%; }
-  .apple-link a { color: inherit !important; font-family: inherit !important; font-size: inherit !important; font-weight: inherit !important; line-height: inherit !important; text-decoration: none !important; }
-  #MessageViewBody a { color: inherit; text-decoration: none; font-size: inherit; font-family: inherit; font-weight: inherit; line-height: inherit; }
-  .btn-primary table td:hover { background-color: #1d4ed8 !important; }
-  .btn-primary a:hover { background-color: #1d4ed8 !important; border-color: #1d4ed8 !important; }
-}
-`;
+const FONT = "Arial, Helvetica, sans-serif";
+const TEAL = '#0e7490';
+const INK = '#1f2937';
+const MUTED = '#6b7280';
 
 function escapeHtml(value: string): string {
   return value
@@ -47,146 +20,137 @@ function escapeHtml(value: string): string {
 }
 
 function wrapEmailBody(innerRowsHtml: string): string {
-  return `<!doctype html>
-<html style="height:100%">
+  const appName = escapeHtml(env.APP_NAME);
+  return `<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <title>${escapeHtml(env.APP_NAME)}</title>
-  <style>${EMAIL_STYLES}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${appName}</title>
 </head>
-<body style="background-color:#fff;font-family:'Open Sans',sans-serif;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.4;margin:0;padding:0;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;height:100%;">
-  <table class="es-wrapper" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px;padding:0;Margin:0;width:100%;height:100%;background-repeat:repeat;background-position:center top;background-color:#EDEDED;" width="100%" cellspacing="0" cellpadding="0">
-    <tbody>
-      <tr><td style="height:15px;"></td></tr>
-      <tr>
-        <td style="padding:0;Margin:0" valign="top">
-          <table class="es-content" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px;table-layout:fixed !important;width:100%" cellspacing="0" cellpadding="0" align="center">
-            <tbody>
-              <tr>
-                <td style="padding:0;Margin:0" align="center">
-                  <table class="es-content-body" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px;background-color:#ffffff;width:100%;max-width:600px" cellspacing="0" cellpadding="0" bgcolor="#ffffff" align="center">
-                    <tbody>
-                      <tr>
-                        <td class="es-m-p0t" style="Margin:0;padding-top:0;padding-bottom:30px;padding-left:30px;padding-right:30px;" align="left">
-                          <table style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px" width="100%" cellspacing="0" cellpadding="0">
-                            <tbody>
-                              <tr>
-                                <td style="padding:0;Margin:0;width:520px" valign="top" align="center">
-                                  <table role="presentation" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px" width="100%" cellspacing="0" cellpadding="0">
-                                    <tbody>
-                                      <tr><td style="padding:0;height:20px" align="left">&nbsp;</td></tr>
-                                      <tr>
-                                        <td style="padding:0;" align="left">
-                                          <a href="${UI_BASE_URL}" target="_blank" style="display:inline-block;">
-                                            <img width="180" class="adapt-img" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" alt="${escapeHtml(env.APP_NAME)}" src="cid:${EMAIL_CID.logo}">
-                                          </a>
-                                        </td>
-                                      </tr>
-                                      <tr><td style="padding:0;height:35px" align="left">&nbsp;</td></tr>
-                                      ${innerRowsHtml}
-                                    </tbody>
-                                  </table>
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <table class="es-content" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px;table-layout:fixed !important;width:100%" cellspacing="0" cellpadding="0" align="center">
-            <tbody>
-              <tr>
-                <td class="es-info-area" style="padding:0;Margin:0" align="center">
-                  <table class="es-content-body" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px;background-color:transparent;width:100%;max-width:600px" cellspacing="0" cellpadding="0" align="center">
-                    <tbody>
-                      <tr>
-                        <td style="Margin:0;padding-top:10px;padding-bottom:30px;padding-left:30px;padding-right:30px;" align="left">
-                          <table style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px" width="100%" cellspacing="0" cellpadding="0">
-                            <tbody>
-                              <tr>
-                                <td style="padding:0;Margin:0;width:520px" valign="top" align="center">
-                                  <table role="presentation" style="mso-table-lspace:0pt;mso-table-rspace:0pt;border-collapse:collapse;border-spacing:0px" width="100%" cellspacing="0" cellpadding="0">
-                                    <tbody>
-                                      <tr>
-                                        <td class="es-infoblock made_with" style="padding:0;Margin:0;line-height:120%;font-size:0;padding-top:0px;height:20px;" align="left">
-                                          <p style="text-align:center;Margin:0;-webkit-text-size-adjust:none;-ms-text-size-adjust:none;mso-line-height-rule:exactly;line-height:24px;color:#000;font-size:14px;">
-                                            ${escapeHtml(env.APP_NAME)}. &copy; ${CURRENT_YEAR} All Rights Reserved.
-                                          </p>
-                                        </td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </td>
-      </tr>
-    </tbody>
+<body style="margin:0;padding:0;background-color:#f3f5f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#f3f5f7;">
+    <tr>
+      <td align="center" style="padding:32px 12px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:600px;max-width:600px;background-color:#ffffff;border:1px solid #e5e7eb;">
+          <tr>
+            <td align="center" style="padding:28px 32px 18px 32px;background-color:#ffffff;">
+              <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;">
+                <img src="${LOGO_URL}" width="200" alt="TechWagger" style="display:block;border:0;outline:none;text-decoration:none;width:200px;max-width:200px;height:auto;">
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td style="height:3px;line-height:3px;font-size:0;background-color:${TEAL};">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 32px 8px 32px;font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                ${innerRowsHtml}
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 32px 28px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td style="border-top:1px solid #e5e7eb;padding-top:16px;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};" align="center">
+                    ${appName}<br>
+                    &copy; ${CURRENT_YEAR} TechWagger. All rights reserved.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
   </table>
 </body>
 </html>`;
 }
 
-function ctaButton(href: string, label: string, bg = '#3b82f6'): string {
-  return `<p style="margin-bottom:10px;">
-  <a href="${href}" style="display:inline-block;background:${bg};color:#fff;padding:12px 22px;text-decoration:none;border-radius:4px;font-weight:600;">
-    ${escapeHtml(label)}
-  </a>
-</p>`;
+function ctaButton(href: string, label: string, bg = TEAL): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:8px 0 16px 0;">
+  <tr>
+    <td align="center" bgcolor="${bg}" style="background-color:${bg};border-radius:4px;">
+      <a href="${href}" target="_blank" style="display:inline-block;padding:12px 22px;font-family:${FONT};font-size:14px;line-height:16px;font-weight:bold;color:#ffffff;text-decoration:none;">
+        ${escapeHtml(label)}
+      </a>
+    </td>
+  </tr>
+</table>`;
 }
 
-/** Image CTA — prefer CID (reliable in Gmail); live URL kept as fallback href host context */
-function ctaImageButton(
-  href: string,
-  label: string,
-  cid: string,
-  liveUrl: string,
-  opts?: { width?: number; height?: number; bg?: string },
-): string {
-  const width = opts?.width ?? 160;
-  const heightAttr = opts?.height ? ` height="${opts.height}"` : '';
-  // CID first so the PNG ships with the email (SPA hosts often return HTML for missing /img/* paths)
-  const src = cid ? `cid:${cid}` : liveUrl;
-  if (src) {
-    return `<p style="margin:16px 0 10px 0;">
-  <a href="${href}" target="_blank" style="display:inline-block;text-decoration:none;border:0;outline:none;">
-    <img width="${width}"${heightAttr} alt="${escapeHtml(label)}" src="${src}" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;max-width:100%;height:auto;" />
-  </a>
-</p>`;
-  }
-  return ctaButton(href, label, opts?.bg);
+function dashboardCta(href: string, label = 'Sign in'): string {
+  return ctaButton(href, label, TEAL);
 }
 
-function dashboardCta(href: string, label = 'Go to Dashboard'): string {
-  return ctaImageButton(href, label, EMAIL_CID.dashboardCta, CTA_DASHBOARD_LIVE, {
-    width: 160,
-    height: 41,
-  });
+function heading(text: string): string {
+  return `<tr>
+    <td style="padding:0 0 14px 0;font-family:${FONT};font-size:22px;line-height:28px;font-weight:bold;color:#0f172a;">
+      ${escapeHtml(text)}
+    </td>
+  </tr>`;
 }
 
-function resetPasswordAction(hyperText: string): string {
-  return ctaImageButton(hyperText, 'Reset Password', EMAIL_CID.resetCta, CTA_RESET_LIVE, {
-    width: 160,
-    height: 41,
-  });
+function textRow(html: string, padding = '0 0 14px 0'): string {
+  return `<tr>
+    <td style="padding:${padding};font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
+      ${html}
+    </td>
+  </tr>`;
+}
+
+function signoff(): string {
+  return textRow(`Regards,<br>${escapeHtml(TEAM_NAME)}`, '8px 0 12px 0');
+}
+
+function actionRow(buttonHtml: string): string {
+  return `<tr><td style="padding:2px 0 16px 0;">${buttonHtml}</td></tr>`;
+}
+
+function detailTable(rows: { label: string; value: string }[]): string {
+  const body = rows
+    .filter((row) => row.value.trim() !== '')
+    .map(
+      (row) => `<tr>
+      <td width="168" valign="top" style="width:168px;padding:12px 14px;border-bottom:1px solid #e5e7eb;background-color:#f8fafc;font-family:${FONT};font-size:13px;line-height:20px;color:${MUTED};">
+        ${escapeHtml(row.label)}
+      </td>
+      <td valign="top" style="padding:12px 14px;border-bottom:1px solid #e5e7eb;font-family:${FONT};font-size:14px;line-height:20px;color:${INK};">
+        ${escapeHtml(row.value)}
+      </td>
+    </tr>`,
+    )
+    .join('');
+  return `<tr>
+    <td style="padding:0 0 16px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #e5e7eb;">
+        ${body}
+      </table>
+    </td>
+  </tr>`;
+}
+
+function codeBlock(code: string): string {
+  return `<tr>
+    <td align="center" style="padding:4px 0 18px 0;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+        <tr>
+          <td align="center" style="padding:14px 28px;background-color:#f0fdfa;border:1px solid #99f6e4;font-family:${FONT};font-size:28px;line-height:32px;font-weight:bold;letter-spacing:6px;color:#0f172a;">
+            ${escapeHtml(code)}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
 }
 
 /** Forgot / reset password email */
@@ -198,27 +162,12 @@ export function forgetPasswordMailTemplate({
   hyperText: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear User,</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          We are sending you this email because you requested a password reset. Click below to create a new password.
-        </p>
-        ${resetPasswordAction(hyperText)}
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          If you did not request a password reset, you can ignore this email. Your existing password will not be changed.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading('Reset your password')}
+    ${textRow(`Dear User,`)}
+    ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Choose a new password with the button below. This link expires in 1 hour.`)}
+    ${actionRow(ctaButton(hyperText, 'Reset password', TEAL))}
+    ${textRow(`If you did not ask for a reset, ignore this email. Your current password will not change.`)}
+    ${signoff()}
   `);
 }
 
@@ -232,31 +181,14 @@ export function emailVerificationOtpMailTemplate({
   hyperText: string;
   purpose?: string;
 }): string {
+  const purposeLabel = purpose.replace(/[_-]+/g, ' ').trim() || 'verification';
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear User,</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          Your verification code for <strong>${escapeHtml(purpose)}</strong> is:
-        </p>
-        <p style="margin-bottom:10px;">
-          <span style="display:inline-block;font-size:28px;font-weight:700;letter-spacing:6px;color:#0f172a;">${escapeHtml(hyperText)}</span>
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          This code is valid for 10 minutes. Do not share it with anyone.
-          If you did not request this, you can ignore this email.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading('Your verification code')}
+    ${textRow(`Dear User,`)}
+    ${textRow(`Use this code to complete <strong>${escapeHtml(purposeLabel)}</strong> on <strong>${escapeHtml(env.APP_NAME)}</strong>. It expires in 10 minutes.`)}
+    ${codeBlock(hyperText)}
+    ${textRow(`Do not share this code. ${escapeHtml(env.APP_NAME)} will never ask for it by phone or message. If you did not request it, ignore this email.`)}
+    ${signoff()}
   `);
 }
 
@@ -274,23 +206,16 @@ export function contactFormMailTemplate({
   message: string;
   subject: string;
 }): string {
-  const row = (label: string, value: string) => `
-    <tr>
-      <td width="80" style="padding:0;Margin:0;" align="left"><p style="Margin:0;line-height:24px;color:#000;">${escapeHtml(label)}</p></td>
-      <td width="10" style="line-height:24px;">:</td>
-      <td style="text-align:left;color:#000;font-weight:normal;line-height:24px;">${escapeHtml(value)}</td>
-    </tr>`;
-
   return wrapEmailBody(`
-    ${row('Name', name)}
-    ${row('Email', email)}
-    ${row('Phone', phone || '—')}
-    ${row('Subject', subject)}
-    <tr>
-      <td valign="top" width="80" style="padding:0;Margin:0;" align="left"><p style="Margin:0;line-height:24px;color:#000;">Message</p></td>
-      <td valign="top" width="10" style="line-height:24px;">:</td>
-      <td style="text-align:left;color:#000;font-weight:normal;line-height:24px;">${escapeHtml(message)}</td>
-    </tr>
+    ${heading('New contact enquiry')}
+    ${textRow(`A visitor sent a message from the ${escapeHtml(env.APP_NAME)} contact form. Reply to the email address below.`)}
+    ${detailTable([
+      { label: 'Name', value: name },
+      { label: 'Email', value: email },
+      { label: 'Phone', value: phone || 'Not provided' },
+      { label: 'Subject', value: subject },
+      { label: 'Message', value: message },
+    ])}
   `);
 }
 
@@ -303,30 +228,12 @@ export function adminPasswordResetMailTemplate({
   resetLink: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(userName || 'User')},</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          Your password has been reset by a Super Administrator.
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          For security reasons, please set a new password using the link below:
-        </p>
-        ${ctaImageButton(resetLink, 'Set New Password', EMAIL_CID.resetCta, CTA_RESET_LIVE, { width: 160, height: 41 })}
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          This link will expire soon. If you did not expect this, contact support immediately.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading('Set a new password')}
+    ${textRow(`Dear ${escapeHtml(userName || 'User')},`)}
+    ${textRow(`An administrator reset the password on your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Set a new password before you sign in again. This link expires in 1 hour.`)}
+    ${actionRow(ctaButton(resetLink, 'Set a new password', TEAL))}
+    ${textRow(`If you did not expect this, contact your organization administrator before using the link.`)}
+    ${signoff()}
   `);
 }
 
@@ -339,27 +246,12 @@ export function welcomeMailTemplate({
   loginUrl?: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(firstName)},</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          Welcome to <strong>${escapeHtml(env.APP_NAME)}</strong>. Your account is ready.
-        </p>
-        ${dashboardCta(loginUrl, 'Login to Dashboard')}
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          You can take exams, view results, and manage your profile from the dashboard.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading(`Welcome to ${env.APP_NAME}`)}
+    ${textRow(`Dear ${escapeHtml(firstName)},`)}
+    ${textRow(`Your account is ready. Sign in to view assigned exams, check results, and update your profile.`)}
+    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
+    ${textRow(`Keep your login details private. If you need a new password later, use Forgot password on the sign-in page.`)}
+    ${signoff()}
   `);
 }
 
@@ -382,102 +274,19 @@ export function examAssignmentMailTemplate({
   dashboardUrl?: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">
-          Dear ${escapeHtml(studentName)},
-        </p>
-      </td>
-    </tr>
-
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          You have been assigned a new exam on
-          <strong>${escapeHtml(env.APP_NAME)}</strong>.
-        </p>
-
-        <p style="margin-bottom:16px;line-height:24px;color:#000;">
-          Please find the exam details below:
-        </p>
-
-        <table
-          style="width:100%;border-collapse:collapse;margin:12px 0 20px;background:#f8fafc;border:1px solid #e2e8f0;"
-          cellpadding="0"
-          cellspacing="0"
-        >
-          <tr>
-            <td style="padding:12px 16px;line-height:24px;color:#000;">
-              <strong>Exam Name:</strong><br/>
-              ${escapeHtml(examName)}
-            </td>
-          </tr>
-
-          ${
-            scheduledDate
-              ? `<tr>
-                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-                    <strong>Scheduled Date:</strong><br/>
-                    ${escapeHtml(scheduledDate)}
-                  </td>
-                </tr>`
-              : ''
-          }
-
-          ${
-            scheduledTime
-              ? `<tr>
-                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-                    <strong>Scheduled Time:</strong><br/>
-                    ${escapeHtml(scheduledTime)}
-                  </td>
-                </tr>`
-              : ''
-          }
-
-          ${
-            durationMinutes != null
-              ? `<tr>
-                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-                    <strong>Duration:</strong><br/>
-                    ${escapeHtml(String(durationMinutes))} minutes
-                  </td>
-                </tr>`
-              : ''
-          }
-
-          ${
-            status
-              ? `<tr>
-                  <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-                    <strong>Status:</strong><br/>
-                    ${escapeHtml(status)}
-                  </td>
-                </tr>`
-              : ''
-          }
-        </table>
-
-        ${dashboardCta(dashboardUrl, 'Go to Dashboard')}
-
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Please log in to your dashboard to view the exam and check all
-          available instructions before starting.
-        </p>
-
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Good luck with your exam!
-        </p>
-      </td>
-    </tr>
-
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">
-          Regards,<br />${escapeHtml(TEAM_NAME)}
-        </p>
-      </td>
-    </tr>
+    ${heading('An exam has been assigned to you')}
+    ${textRow(`Dear ${escapeHtml(studentName)},`)}
+    ${textRow(`Your institute assigned an exam on <strong>${escapeHtml(env.APP_NAME)}</strong>. Sign in before the scheduled time and read the instructions on the exam page.`)}
+    ${detailTable([
+      { label: 'Exam', value: examName },
+      { label: 'Date', value: scheduledDate ?? '' },
+      { label: 'Time', value: scheduledTime ?? '' },
+      { label: 'Duration', value: durationMinutes != null ? `${durationMinutes} minutes` : '' },
+      { label: 'Status', value: status ?? '' },
+    ])}
+    ${actionRow(dashboardCta(dashboardUrl, 'Open my exams'))}
+    ${textRow(`Start only when you are ready. If the exam uses fullscreen, stay in that mode until you submit. The timer cannot be paused.`)}
+    ${signoff()}
   `);
 }
 
@@ -492,29 +301,16 @@ export function paymentConfirmationMailTemplate({
   paymentId: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear User,</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          We received your payment of <strong>${escapeHtml(currency)} ${escapeHtml(String(amount))}</strong>.
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Reference: <strong>${escapeHtml(paymentId)}</strong>
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Thank you for using ${escapeHtml(env.APP_NAME)}.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading('Payment received')}
+    ${textRow(`Dear User,`)}
+    ${textRow(`Your payment was successful. Keep this email as your receipt.`)}
+    ${detailTable([
+      { label: 'Amount', value: `${currency} ${amount}` },
+      { label: 'Reference', value: paymentId },
+      { label: 'Status', value: 'Paid' },
+    ])}
+    ${textRow(`If this amount does not match what you expected, contact your organization administrator and share the reference above.`)}
+    ${signoff()}
   `);
 }
 
@@ -531,39 +327,17 @@ export function documentRejectedMailTemplate({
   actionUrl?: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(userName || 'User')},</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          Your document <strong>${escapeHtml(documentName)}</strong> has been reviewed and
-          unfortunately <strong>rejected</strong>.
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Please re-upload the document with correct and clear details.
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Make sure:
-        </p>
-        <ul style="margin-top:0;line-height:24px;color:#000;">
-          <li>The document is valid and not expired</li>
-          <li>The image is clear and readable</li>
-          <li>All required information is visible</li>
-        </ul>
-        ${ctaButton(actionUrl, 'Re-upload Document', '#d9534f')}
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          If you believe this is a mistake, contact support:<br/>${escapeHtml(supportEmail)}
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading('Document not accepted')}
+    ${textRow(`Dear ${escapeHtml(userName || 'User')},`)}
+    ${textRow(`We reviewed <strong>${escapeHtml(documentName)}</strong> and could not accept it. Upload a new copy that meets the checks below.`)}
+    ${detailTable([
+      { label: 'Document', value: documentName },
+      { label: 'Status', value: 'Not accepted' },
+      { label: 'What to check', value: 'It must be valid, not expired, clear enough to read, and show every required field.' },
+    ])}
+    ${actionRow(ctaButton(actionUrl, 'Upload again', '#b91c1c'))}
+    ${textRow(`If this looks like a mistake, write to ${escapeHtml(supportEmail)} and include the document name.`)}
+    ${signoff()}
   `);
 }
 
@@ -584,49 +358,22 @@ export function organizationCredentialsMailTemplate({
   loginUrl?: string;
 }): string {
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(adminName || 'Organization Admin')},</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          Your organization <strong>${escapeHtml(orgName)}</strong> has been added to
-          <strong>${escapeHtml(env.APP_NAME)}</strong>.
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          ${
-            isApproved
-              ? 'Your account is active. Use the credentials below to log in.'
-              : 'Your account is pending approval. After Super Admin approves, you can log in with these credentials.'
-          }
-        </p>
-        <table style="width:100%;border-collapse:collapse;margin:12px 0 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;" cellpadding="0" cellspacing="0">
-          <tr>
-            <td style="padding:12px 16px;line-height:24px;color:#000;">
-              <strong>Login email:</strong><br/>
-              ${escapeHtml(loginEmail)}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-              <strong>Temporary password:</strong><br/>
-              <span style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:0.5px;">${escapeHtml(temporaryPassword)}</span>
-            </td>
-          </tr>
-        </table>
-        ${dashboardCta(loginUrl, 'Login to Dashboard')}
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          For security, please change your password after the first login.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading(isApproved ? 'Your organization can sign in' : 'Your organization is awaiting approval')}
+    ${textRow(`Dear ${escapeHtml(adminName || 'Organization Admin')},`)}
+    ${textRow(
+      isApproved
+        ? `<strong>${escapeHtml(orgName)}</strong> is active on <strong>${escapeHtml(env.APP_NAME)}</strong>. Use the details below to sign in and set up exams, faculty, and students.`
+        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it. You can sign in with these details after approval.`,
+    )}
+    ${detailTable([
+      { label: 'Organization', value: orgName },
+      { label: 'Login email', value: loginEmail },
+      { label: 'Temporary password', value: temporaryPassword },
+      { label: 'Account status', value: isApproved ? 'Active' : 'Pending approval' },
+    ])}
+    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
+    ${textRow(`Change this password after your first sign-in. Do not forward this email.`)}
+    ${signoff()}
   `);
 }
 
@@ -654,54 +401,33 @@ export function organizationActionMailTemplate({
   const titles: Record<OrganizationActionType, string> = {
     created: 'Organization registered',
     approved: 'Organization approved',
-    updated: 'Organization updated',
+    updated: 'Organization details updated',
     deleted: 'Organization removed',
-    deactivated: 'Organization deactivated',
+    deactivated: 'Organization access paused',
   };
-  const ctaLabel =
-    action === 'approved' || action === 'created' || action === 'updated'
-      ? 'Go to Dashboard'
-      : 'Contact Support';
-  const ctaColor = action === 'deleted' || action === 'deactivated' ? '#d9534f' : '#3b82f6';
-  const useDashboardImage =
-    action === 'approved' || action === 'created' || action === 'updated';
+  const leads: Record<OrganizationActionType, string> = {
+    created: `${orgName} has been registered on ${env.APP_NAME}. A platform administrator will review it before the account can be used.`,
+    approved: `${orgName} is approved. You can sign in and manage exams, faculty, and students.`,
+    updated: `The record for ${orgName} was updated. Sign in if you need to confirm the new details.`,
+    deleted: `${orgName} has been removed from ${env.APP_NAME}. Sign-in for this organization is no longer available.`,
+    deactivated: `${orgName} has been deactivated. Sign-in is paused until a platform administrator restores access.`,
+  };
+  const showSignIn = action === 'approved' || action === 'created' || action === 'updated';
+  const showSupport = action === 'deactivated';
 
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear Organization Admin,</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          <strong>${escapeHtml(titles[action])}</strong> for
-          <strong>${escapeHtml(orgName)}</strong>.
-        </p>
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          ${escapeHtml(message)}
-        </p>
-        ${
-          actorName
-            ? `<p style="margin-bottom:10px;line-height:24px;color:#000;">
-          Action by: <strong>${escapeHtml(actorName)}</strong> (Super Admin)
-        </p>`
-            : ''
-        }
-        ${
-          action !== 'deleted'
-            ? useDashboardImage
-              ? dashboardCta(actionUrl, ctaLabel)
-              : ctaButton(actionUrl, ctaLabel, ctaColor)
-            : ''
-        }
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading(titles[action])}
+    ${textRow(`Dear Organization Admin,`)}
+    ${textRow(escapeHtml(leads[action]))}
+    ${textRow(escapeHtml(message))}
+    ${detailTable([
+      { label: 'Organization', value: orgName },
+      { label: 'Update', value: titles[action] },
+      { label: 'Updated by', value: actorName ? `${actorName}, platform administrator` : '' },
+    ])}
+    ${showSignIn ? actionRow(dashboardCta(actionUrl, 'Sign in')) : ''}
+    ${showSupport ? actionRow(ctaButton(actionUrl, 'Contact support', '#b45309')) : ''}
+    ${signoff()}
   `);
 }
 
@@ -723,58 +449,48 @@ export function userCredentialsMailTemplate({
   loginUrl?: string;
   orgName?: string;
 }): string {
+  const roleIntro =
+    roleLabel === 'Student'
+      ? 'You can view assigned exams, attempt them, and check your results after you sign in.'
+      : roleLabel === 'Faculty'
+        ? 'You can create tests, review attempts, and manage your classes after you sign in.'
+        : 'You can manage your organization from the dashboard after you sign in.';
   return wrapEmailBody(`
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="Margin:0;line-height:24px;color:#000;">Dear ${escapeHtml(firstName)},</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0;Margin:0;" align="left">
-        <p style="margin-top:0;margin-bottom:10px;line-height:24px;color:#000;">
-          Your <strong>${escapeHtml(roleLabel)}</strong> account has been created on
-          <strong>${escapeHtml(env.APP_NAME)}</strong>${
-            orgName ? ` for <strong>${escapeHtml(orgName)}</strong>` : ''
-          }.
-        </p>
-        <table style="width:100%;border-collapse:collapse;margin:12px 0 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;" cellpadding="0" cellspacing="0">
-          <tr>
-            <td style="padding:12px 16px;line-height:24px;color:#000;">
-              <strong>Login email:</strong><br/>
-              ${escapeHtml(loginEmail)}
-            </td>
-          </tr>
-          ${
-            enrollmentNo
-              ? `<tr>
-            <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-              <strong>Enrollment no:</strong><br/>
-              <span style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:0.5px;">${escapeHtml(enrollmentNo)}</span>
-            </td>
-          </tr>`
-              : ''
-          }
-          <tr>
-            <td style="padding:0 16px 12px;line-height:24px;color:#000;">
-              <strong>Password:</strong><br/>
-              <span style="font-family:ui-monospace,Consolas,monospace;font-size:15px;letter-spacing:0.5px;">${escapeHtml(temporaryPassword)}</span>
-            </td>
-          </tr>
-        </table>
-        ${dashboardCta(loginUrl, 'Go to Dashboard')}
-        <p style="margin-bottom:10px;line-height:24px;color:#000;">
-          You can log in with your <strong>email</strong>${
-            enrollmentNo ? ' or <strong>enrollment number</strong>' : ''
-          } and the password above.
-          For security, please change your password after the first login.
-          If you forget it later, use <strong>Forgot Password</strong> on the login page.
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <p style="Margin:0;line-height:24px;color:#000;">Regards,<br />${escapeHtml(TEAM_NAME)}</p>
-      </td>
-    </tr>
+    ${heading(`Your ${roleLabel.toLowerCase()} account is ready`)}
+    ${textRow(`Dear ${escapeHtml(firstName)},`)}
+    ${textRow(
+      `An administrator created your <strong>${escapeHtml(roleLabel)}</strong> account on <strong>${escapeHtml(env.APP_NAME)}</strong>${
+        orgName ? ` for <strong>${escapeHtml(orgName)}</strong>` : ''
+      }. ${roleIntro}`,
+    )}
+    ${detailTable([
+      { label: 'Role', value: roleLabel },
+      { label: 'Organization', value: orgName ?? '' },
+      { label: 'Login email', value: loginEmail },
+      { label: 'Enrollment number', value: enrollmentNo ?? '' },
+      { label: 'Password', value: temporaryPassword },
+    ])}
+    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
+    ${textRow(
+      enrollmentNo
+        ? `Sign in with your email or enrollment number and the password above. Change the password after your first sign-in. If you forget it later, use Forgot password on the sign-in page.`
+        : `Sign in with your email and the password above. Change the password after your first sign-in. If you forget it later, use Forgot password on the sign-in page.`,
+    )}
+    ${signoff()}
+  `);
+}
+
+/** Plain notification that still uses the same branded layout. */
+export function notificationMailTemplate({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}): string {
+  return wrapEmailBody(`
+    ${heading(title)}
+    ${textRow(escapeHtml(body).replace(/\n/g, '<br>'))}
+    ${signoff()}
   `);
 }

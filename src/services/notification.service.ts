@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
+import { notificationMailTemplate } from '../templates/emailTemplates.js';
 import { sendEmail, sendExamAssignmentEmail } from './email.service.js';
 import { isSmtpConfigured } from '../config/env.js';
 
@@ -44,7 +45,7 @@ export async function createNotification(input: {
       void sendEmail({
         to: user.rows[0].email,
         subject: input.title,
-        html: `<div style="font-family:Arial,sans-serif"><h3>${input.title}</h3><p>${input.body}</p></div>`,
+        html: notificationMailTemplate({ title: input.title, body: input.body }),
         text: input.body,
       }).catch((err) => console.error('[email] notification failed:', err));
     }

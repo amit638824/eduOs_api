@@ -1,7 +1,6 @@
 import {
   adminPasswordResetMailTemplate,
   contactFormMailTemplate,
-  EMAIL_CID,
   emailVerificationOtpMailTemplate,
   examAssignmentMailTemplate,
   forgetPasswordMailTemplate,
@@ -15,24 +14,6 @@ import {
 import * as orgService from './organization.service.js';
 import { env, bccEmails, isSmtpConfigured, frontendUrl } from '../config/env.js';
 import nodemailer from 'nodemailer';
-import fs from 'fs';
-import path from 'path';
-
-/** Bundled PNGs (same files live on frontend public/img/email after UI deploy) */
-function resolveEmailAssetsDir(): string {
-  const candidates = [
-    path.join(process.cwd(), 'src', 'assets', 'email'),
-    path.join(process.cwd(), 'dist', 'assets', 'email'),
-    path.join(process.cwd(), 'assets', 'email'),
-    path.join(__dirname, '..', 'assets', 'email'),
-  ];
-  for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, 'go-to-dashboard.png'))) return dir;
-  }
-  return candidates[0];
-}
-
-const EMAIL_ASSETS_DIR = resolveEmailAssetsDir();
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -54,33 +35,6 @@ function getTransporter(): nodemailer.Transporter | null {
   }
 
   return transporter;
-}
-
-function inlinePng(
-  filename: string,
-  cid: string,
-): { filename: string; path: string; cid: string; contentType: string; contentDisposition: 'inline' } | null {
-  const filePath = path.join(EMAIL_ASSETS_DIR, filename);
-  if (!fs.existsSync(filePath)) {
-    console.warn(`[email] Missing asset: ${filePath}`);
-    return null;
-  }
-  return {
-    filename,
-    path: filePath,
-    cid,
-    contentType: 'image/png',
-    contentDisposition: 'inline',
-  };
-}
-
-/** Always attach logo + CTA button PNGs so Gmail does not depend on SPA image routes */
-function emailInlineAttachments() {
-  return [
-    inlinePng('techwagger-logo.png', EMAIL_CID.logo) ?? inlinePng('sca-logo.png', EMAIL_CID.logo),
-    inlinePng('go-to-dashboard.png', EMAIL_CID.dashboardCta),
-    inlinePng('reset-password.png', EMAIL_CID.resetCta),
-  ].filter((a): a is NonNullable<typeof a> => a != null);
 }
 
 export interface SendEmailInput {
@@ -106,7 +60,6 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
     subject: input.subject,
     html: input.html,
     text: input.text,
-    attachments: emailInlineAttachments(),
   });
 
   return true;
@@ -116,7 +69,7 @@ export async function sendPasswordResetEmail(email: string, resetToken: string):
   const resetUrl = frontendUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
   return sendEmail({
     to: email,
-    subject: `${env.APP_NAME} — Reset your password`,
+    subject: `Reset your ${env.APP_NAME} password`,
     html: forgetPasswordMailTemplate({ hyperText: resetUrl }),
     text: `Reset your password: ${resetUrl}\nExpires in 1 hour.`,
   });
@@ -130,7 +83,7 @@ export async function sendAdminPasswordResetEmail(
   const resetLink = frontendUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
   return sendEmail({
     to: email,
-    subject: `${env.APP_NAME} — Set a new password`,
+    subject: `Set a new password for your ${env.APP_NAME} account`,
     html: adminPasswordResetMailTemplate({ userName, resetLink }),
     text: `Your password was reset by an administrator. Set a new password: ${resetLink}`,
   });
@@ -139,7 +92,7 @@ export async function sendAdminPasswordResetEmail(
 export async function sendOtpEmail(email: string, code: string, purpose: string): Promise<boolean> {
   return sendEmail({
     to: email,
-    subject: `${env.APP_NAME} — Your verification code`,
+    subject: `Your ${env.APP_NAME} verification code`,
     html: emailVerificationOtpMailTemplate({ hyperText: code, purpose }),
     text: `Your OTP for ${purpose} is ${code}. Valid for 10 minutes.`,
   });
@@ -153,7 +106,7 @@ export async function sendPaymentConfirmationEmail(
 ): Promise<boolean> {
   return sendEmail({
     to: email,
-    subject: `${env.APP_NAME} — Payment successful`,
+    subject: `Payment received — ${env.APP_NAME}`,
     html: paymentConfirmationMailTemplate({ amount, currency, paymentId }),
     text: `Payment of ${currency} ${amount} received. Ref: ${paymentId}`,
   });
@@ -182,7 +135,7 @@ export async function sendExamAssignmentEmail(input: {
 
   return sendEmail({
     to: input.to,
-    subject: `${env.APP_NAME} — Exam assigned: ${input.examName}`,
+    subject: `Exam assigned: ${input.examName}`,
     html: examAssignmentMailTemplate({
       studentName: input.studentName,
       examName: input.examName,
@@ -229,7 +182,7 @@ export async function sendUserCredentialsEmail(input: {
   const loginUrl = frontendUrl('/login');
   return sendEmail({
     to: input.to,
-    subject: `${env.APP_NAME} — Your ${roleLabel.toLowerCase()} account`,
+    subject: `Your ${roleLabel.toLowerCase()} account on ${env.APP_NAME}`,
     html: userCredentialsMailTemplate({
       firstName: input.firstName,
       roleLabel,
@@ -263,18 +216,18 @@ export async function sendContactFormEmail(input: {
   if (!to) return false;
   return sendEmail({
     to,
-    subject: `${env.APP_NAME} — Contact: ${input.subject}`,
+    subject: `New contact enquiry: ${input.subject}`,
     html: contactFormMailTemplate(input),
     text: `Name: ${input.name}\nEmail: ${input.email}\nPhone: ${input.phone}\nSubject: ${input.subject}\n\n${input.message}`,
   });
 }
 
 const ORG_ACTION_SUBJECT: Record<OrganizationActionType, string> = {
-  created: 'Organization registered on platform',
-  approved: 'Organization access approved',
-  updated: 'Organization details updated',
-  deleted: 'Organization removed from platform',
-  deactivated: 'Organization deactivated',
+  created: 'Your organization has been registered',
+  approved: 'Your organization has been approved',
+  updated: 'Your organization details were updated',
+  deleted: 'Your organization has been removed',
+  deactivated: 'Your organization access is paused',
 };
 
 /**
@@ -326,7 +279,7 @@ export async function sendOrganizationCredentialsEmail(input: {
   const loginUrl = frontendUrl('/login');
   return sendEmail({
     to: input.to,
-    subject: `${env.APP_NAME} — Your organization login details`,
+    subject: `Your ${env.APP_NAME} organization login details`,
     html: organizationCredentialsMailTemplate({
       orgName: input.orgName,
       adminName: input.adminName,
