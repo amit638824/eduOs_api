@@ -130,6 +130,9 @@ export const env = {
 
   RAZORPAY_KEY_ID: str('RAZORPAY_KEY_ID'),
   RAZORPAY_KEY_SECRET: str('RAZORPAY_KEY_SECRET'),
+
+  OPENAI_API_KEY: str('OPENAI_API_KEY'),
+  OPENAI_MODEL: str('OPENAI_MODEL', 'gpt-4o-mini'),
 } as const;
 
 /** Build an absolute frontend URL (strips duplicate slashes). */
@@ -190,6 +193,8 @@ export const corsOrigins = Array.from(
 export const isSmtpConfigured = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
 
 export const isRazorpayConfigured = Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+
+export const isOpenAiConfigured = Boolean(env.OPENAI_API_KEY);
 
 export const bccEmails = (env.BCC_EMAILS || '')
   .split(',')

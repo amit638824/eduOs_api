@@ -84,6 +84,17 @@ export async function listTests(
   limit: number,
   status?: string,
 ) {
+  await query(
+    `UPDATE tests
+     SET status = 'completed'
+     WHERE organization_id = $1
+       AND archived_at IS NULL
+       AND status = 'live'
+       AND scheduled_end IS NOT NULL
+       AND scheduled_end < NOW(3)`,
+    [organizationId],
+  );
+
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
 

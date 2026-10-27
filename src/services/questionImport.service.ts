@@ -41,8 +41,27 @@ export interface ImportSummary {
   rows: ImportRowResult[];
 }
 
+function detectDelimiter(headerLine: string): string {
+  let commas = 0;
+  let semis = 0;
+  let tabs = 0;
+  let quotes = false;
+  for (let i = 0; i < headerLine.length; i += 1) {
+    const ch = headerLine[i];
+    if (ch === '"') quotes = !quotes;
+    if (quotes) continue;
+    if (ch === ',') commas += 1;
+    else if (ch === ';') semis += 1;
+    else if (ch === '\t') tabs += 1;
+  }
+  if (tabs >= commas && tabs >= semis && tabs > 0) return '\t';
+  if (semis > commas) return ';';
+  return ',';
+}
+
 function parseCsv(text: string): CsvRow[] {
-  const raw = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const raw = text.replace(/^\uFEFF/, '').replace(/\u0000/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const delimiter = detectDelimiter(raw.split('\n')[0] ?? '');
   const rows: string[][] = [];
   let field = '';
   let row: string[] = [];
@@ -67,7 +86,7 @@ function parseCsv(text: string): CsvRow[] {
       inQuotes = true;
       continue;
     }
-    if (ch === ',') {
+    if (ch === delimiter) {
       row.push(field.trim());
       field = '';
       continue;
@@ -89,6 +108,11 @@ function parseCsv(text: string): CsvRow[] {
   }
 
   const headers = rows[0].map((h) => normalizeHeader(h));
+  if (!headers.includes('question')) {
+    throw new ValidationError(
+      'CSV header must include a question column. Download the example CSV and keep the header row.',
+    );
+  }
   return rows.slice(1).map((cols) => {
     const obj: CsvRow = {};
     headers.forEach((h, i) => {
@@ -290,10 +314,12 @@ async function getDefaultBranchId(organizationId: string): Promise<string> {
      ORDER BY created_at ASC LIMIT 1`,
     [organizationId],
   );
-  if (!result.rows[0]) {
-    throw new ValidationError('Create a branch before importing questions');
-  }
-  return result.rows[0].id;
+  if (result.rows[0]) return result.rows[0].id;
+  const created = await query<{ id: string }>(
+    `INSERT INTO branches (organization_id, name, code) VALUES ($1, 'Main', 'MAIN') RETURNING id`,
+    [organizationId],
+  );
+  return created.rows[0].id;
 }
 
 export async function importQuestionsFromCsv(

@@ -364,3 +364,62 @@ export const listUsersQuerySchema = paginationSchema.extend({
   role: z.string().optional(),
   search: z.string().optional(),
 });
+
+export const aiQuestionTypeSchema = z.enum([
+  'mcq',
+  'msq',
+  'true_false',
+  'fill_blank',
+  'integer',
+  'numerical',
+  'assertion_reason',
+  'match_following',
+  'matrix_match',
+  'paragraph',
+  'case_study',
+  'subjective',
+]);
+
+export const aiGenerateSchema = z
+  .object({
+    examName: z.string().trim().min(2).max(200),
+    department: z.string().trim().min(1).max(200),
+    subject: z.string().trim().min(1).max(200),
+    chapter: z.string().trim().max(200).optional(),
+    topic: z.string().trim().min(1).max(200),
+    difficulty: z.enum(['easy', 'medium', 'hard', 'mixed']).default('mixed'),
+    language: z.string().trim().min(2).max(20).default('en'),
+    questionTypes: z
+      .array(
+        z.object({
+          type: aiQuestionTypeSchema,
+          count: z.number().int().min(1).max(50),
+        }),
+      )
+      .min(1)
+      .max(12),
+    syllabusText: z.string().trim().max(20000).optional(),
+  })
+  .refine((data) => data.questionTypes.reduce((sum, item) => sum + item.count, 0) <= 200, {
+    message: 'Maximum 200 questions per job',
+  });
+
+export const aiDistractorSchema = z.object({
+  save: z.boolean().optional(),
+  options: z
+    .array(
+      z.object({
+        text: z.string().trim().min(1).max(2000),
+        isCorrect: z.boolean(),
+        whyWrong: z.string().max(2000).optional(),
+      }),
+    )
+    .max(8)
+    .optional(),
+});
+
+export const aiRecommendQuerySchema = z.object({
+  topicId: z.string().uuid().optional(),
+  difficulty: z.coerce.number().int().min(1).max(5).optional(),
+  marks: z.coerce.number().int().min(1).max(500).optional(),
+});

@@ -10,6 +10,7 @@ import {
   requirePermission,
   forbidSuperAdmin,
 } from '../middleware/auth.js';
+import * as aiController from '../controllers/ai.controller.js';
 
 import {
   uuidParamSchema,
@@ -23,6 +24,9 @@ import {
   importQuestionsSchema,
   createTestSchema,
   updateTestSchema,
+  aiGenerateSchema,
+  aiDistractorSchema,
+  aiRecommendQuerySchema,
   publishTestSchema,
   addTestSectionSchema,
   addTestQuestionSchema,
@@ -507,6 +511,94 @@ router.get(
   validate(testIdParam, 'params'),
   requirePermission('analytics', 'read'),
   examController.getTestQuestionAnalytics,
+);
+
+router.post(
+  '/ai/generate',
+  validate(aiGenerateSchema),
+  requirePermission('question', 'create'),
+  aiController.generateQuestions,
+);
+
+router.get(
+  '/ai/jobs',
+  requirePermission('question', 'read'),
+  aiController.listJobs,
+);
+
+router.get(
+  '/ai/jobs/:id',
+  validate(uuidParamSchema, 'params'),
+  requirePermission('question', 'read'),
+  aiController.getJob,
+);
+
+router.post(
+  '/ai/jobs/:id/retry',
+  validate(uuidParamSchema, 'params'),
+  requirePermission('question', 'create'),
+  aiController.retryJob,
+);
+
+router.get(
+  '/ai/usage',
+  requirePermission('question', 'read'),
+  aiController.usage,
+);
+
+router.post(
+  '/ai/blueprint',
+  validate(aiGenerateSchema),
+  requirePermission('question', 'read'),
+  aiController.blueprint,
+);
+
+router.post(
+  '/ai/syllabus-map',
+  validate(aiGenerateSchema),
+  requirePermission('question', 'create'),
+  aiController.syllabus,
+);
+
+router.get(
+  '/ai/recommendations',
+  validate(aiRecommendQuerySchema, 'query'),
+  requirePermission('question', 'read'),
+  aiController.recommendations,
+);
+
+router.get(
+  '/ai/duplicates',
+  requirePermission('question', 'read'),
+  aiController.duplicates,
+);
+
+router.post(
+  '/ai/questions/:id/improve',
+  validate(uuidParamSchema, 'params'),
+  requirePermission('question', 'update'),
+  aiController.improve,
+);
+
+router.post(
+  '/ai/questions/:id/distractors',
+  validate(uuidParamSchema, 'params'),
+  validate(aiDistractorSchema),
+  requirePermission('question', 'update'),
+  aiController.distractors,
+);
+
+router.get(
+  '/ai/practice-insights',
+  requirePermission('result', 'read'),
+  aiController.practice,
+);
+
+router.get(
+  '/ai/reports/:testId/insights',
+  validate(testIdParam, 'params'),
+  requirePermission('analytics', 'read'),
+  aiController.report,
 );
 
 router.get(
