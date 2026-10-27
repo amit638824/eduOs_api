@@ -15,7 +15,7 @@ async function bootstrap() {
 
   const dbOk = await checkDatabaseConnection();
   if (!dbOk) {
-    console.error('Failed to connect to MySQL database. Check DB_DATABASE and run npm run db:setup.');
+    console.error('Failed to connect to MySQL database. Check DB_DATABASE, then run npm run migrate and npm run seed.');
     process.exit(1);
   }
 

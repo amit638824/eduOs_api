@@ -27,6 +27,13 @@ function splitSqlStatements(sql: string): string[] {
 }
 
 async function migrate() {
+  const files = (await fs.readdir(migrationsDir))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  console.log(`Applying ${files.length} migration files:`);
+  for (const file of files) console.log(`  file  ${file}`);
+
   await ensureDatabaseExists();
 
   await query(`
@@ -41,10 +48,6 @@ async function migrate() {
     'SELECT filename FROM schema_migrations ORDER BY id',
   );
   const appliedSet = new Set(applied.rows.map((r) => r.filename));
-
-  const files = (await fs.readdir(migrationsDir))
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
 
   for (const file of files) {
     if (appliedSet.has(file)) {
@@ -79,10 +82,11 @@ async function migrate() {
 
 migrate().catch((err) => {
   console.error('Migration failed:', err);
-  if ((err as { code?: string }).code === 'ECONNREFUSED') {
+  const code = (err as { code?: string }).code;
+  if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENOTFOUND') {
     console.error(
-      `\nMySQL is not running on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '3306'}.`,
-      '\nStart MySQL 8, then set DB_USERNAME / DB_PASSWORD in eduOs_api/.env and run: npm run db:setup',
+      `\nCould not connect to MySQL at ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '3306'}.`,
+      '\nThis one command applies every file in database/migrations. Allow this PC in the database remote-access list, then run: npm run migrate',
     );
   }
   process.exit(1);

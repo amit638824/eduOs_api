@@ -2,8 +2,8 @@
  * EduTech — minimal seed (super admin only)
  *
  * USAGE
- *   npm run db:seed       # wipe all data + insert super admin
- *   npm run db:setup      # migrate + seed
+ *   npm run seed          # wipe all data + insert super admin
+ *   npm run migrate       # apply every file in database/migrations
  */
 import 'dotenv/config';
 import { query, withTransaction, closeDatabase, ensureDatabaseExists } from '../config/database.js';

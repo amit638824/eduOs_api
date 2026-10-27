@@ -6,15 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc && node -e \"const fs=require('fs');const p=require('path');const s=p.join('src','assets','email');const d=p.join('dist','assets','email');fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s))fs.copyFileSync(p.join(s,f),p.join(d,f));\"",
-    "start": "node dist/index.js",
-    "db:migrate": "tsx src/scripts/migrate.ts",
+    "migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
-    "db:seed": "tsx src/scripts/seed.ts",
-    "db:setup": "npm run db:migrate && npm run db:seed",
-    "test:phase1": "tsx src/scripts/test-phase1.ts",
-    "test:negative": "tsx src/scripts/test-negative-phase1.ts",
-    "test:superadmin": "tsx src/scripts/test-superadmin-crud.ts",
-    "test:all": "tsx src/scripts/test-phase1.ts && tsx src/scripts/test-negative-phase1.ts && tsx src/scripts/test-superadmin-crud.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

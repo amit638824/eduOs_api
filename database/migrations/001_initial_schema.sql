@@ -1,5 +1,5 @@
 -- EduTech Phase 1 — MySQL 8 schema
--- Run via: npm run db:migrate
+-- Run via: npm run migrate
 
 CREATE TABLE IF NOT EXISTS organizations (
   id              CHAR(36) PRIMARY KEY DEFAULT (UUID()),
