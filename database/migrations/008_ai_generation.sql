@@ -1,3 +1,4 @@
+-- Foreign keys omitted: phpMyAdmin errno 150 when organizations/users id collation differs.
 CREATE TABLE IF NOT EXISTS ai_generation_jobs (
   id                  CHAR(36) PRIMARY KEY DEFAULT (UUID()),
   organization_id     CHAR(36) NOT NULL,
@@ -22,6 +23,5 @@ CREATE TABLE IF NOT EXISTS ai_generation_jobs (
   updated_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   finished_at         DATETIME(3) NULL,
   INDEX idx_ai_jobs_org (organization_id, created_at),
-  CONSTRAINT fk_ai_jobs_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
-  CONSTRAINT fk_ai_jobs_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+  INDEX idx_ai_jobs_user (created_by)
 ) ENGINE=InnoDB;

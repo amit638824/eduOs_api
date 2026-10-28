@@ -1,5 +1,7 @@
 node_modules/
 dist/
+src/config/
+*.tar
 .env
 .env.local
 .env.*.local
