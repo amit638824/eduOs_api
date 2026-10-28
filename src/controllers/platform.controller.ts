@@ -251,9 +251,8 @@ export async function updateUserStatus(req: Request, res: Response, next: NextFu
 
 export async function listNotifications(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
     const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const result = await notificationService.listNotifications(userId, page, limit);
+    const result = await notificationService.listNotifications(req.user!.id, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -272,8 +271,7 @@ export async function createNotification(req: Request, res: Response, next: Next
 export async function markNotificationRead(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { userId } = await orgContext(req);
-    const result = await notificationService.markNotificationRead(userId, id);
+    const result = await notificationService.markNotificationRead(req.user!.id, id);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -282,8 +280,7 @@ export async function markNotificationRead(req: Request, res: Response, next: Ne
 
 export async function markAllNotificationsRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
-    const result = await notificationService.markAllNotificationsRead(userId);
+    const result = await notificationService.markAllNotificationsRead(req.user!.id);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -292,8 +289,7 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
 
 export async function getUnreadCount(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
-    const result = await notificationService.getUnreadCount(userId);
+    const result = await notificationService.getUnreadCount(req.user!.id);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -447,9 +443,8 @@ export async function listAuditLogs(req: Request, res: Response, next: NextFunct
 
 export async function listActivityLogs(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
     const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const result = await auditService.listActivityLogs(userId, page, limit);
+    const result = await auditService.listActivityLogs(req.user!.id, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
