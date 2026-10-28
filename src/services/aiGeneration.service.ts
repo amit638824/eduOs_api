@@ -178,7 +178,8 @@ async function chatJson(system: string, user: string, usage: Usage): Promise<Rec
     usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
   if (!response.ok) {
-    throw new ValidationError(body.error?.message || `OpenAI request failed (${response.status})`);
+    const message = body.error?.message || `OpenAI request failed (${response.status})`;
+    throw new ValidationError(message);
   }
   usage.prompt += body.usage?.prompt_tokens ?? 0;
   usage.completion += body.usage?.completion_tokens ?? 0;
@@ -191,6 +192,16 @@ async function chatJson(system: string, user: string, usage: Usage): Promise<Rec
   } catch {
     throw new ValidationError('OpenAI returned invalid JSON');
   }
+}
+
+function isOpenAiBillingError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('no credits') ||
+    text.includes('insufficient_quota') ||
+    text.includes('exceeded your current quota') ||
+    text.includes('billing')
+  );
 }
 
 function parseJob(row: Record<string, unknown>) {
@@ -660,10 +671,10 @@ async function runGeneration(jobId: string) {
             remaining -= accepted;
           }
         } catch (err) {
+          const message = err instanceof Error ? err.message : 'Generation batch failed';
+          if (isOpenAiBillingError(message)) throw new ValidationError(message);
           apiFails += 1;
-          errors.push({
-            reason: err instanceof Error ? err.message : 'Generation batch failed',
-          });
+          errors.push({ reason: message });
           if (apiFails >= 3) throw err;
           remaining = 0;
         }
@@ -721,10 +732,12 @@ async function runGeneration(jobId: string) {
       error_message: null,
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Generation failed';
+    const billing = isOpenAiBillingError(message);
     await updateJob(jobId, {
       status: 'failed',
-      error_message: err instanceof Error ? err.message : 'Generation failed',
-      errors_json: JSON.stringify(errors.slice(0, 100)),
+      error_message: message,
+      errors_json: JSON.stringify(billing ? [] : errors.slice(0, 100)),
       prompt_tokens: usage.prompt,
       completion_tokens: usage.completion,
       estimated_cost_usd: estimateCost(env.OPENAI_MODEL || 'gpt-4o-mini', usage),
@@ -756,7 +769,9 @@ async function mapTopics(input: AiGenerateRequest, usage: Usage) {
       })
       .filter((item) => item.topic.length > 1);
     return topics.length ? topics.slice(0, 20) : localSyllabusTopics(input.syllabusText);
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    if (isOpenAiBillingError(message)) throw err;
     return localSyllabusTopics(input.syllabusText);
   }
 }

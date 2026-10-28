@@ -10,6 +10,7 @@ import {
   verifyRefreshToken,
 } from '../utils/security.js';
 import { ConflictError, UnauthorizedError, NotFoundError } from '../utils/errors.js';
+import { env } from '../config/env.js';
 import { sendWelcomeEmail } from './email.service.js';
 
 interface DbUser {
@@ -63,7 +64,7 @@ async function createRefreshTokenRecord(
   const q = client ? client.query.bind(client) : query;
   await q(
     `INSERT INTO refresh_tokens (id, user_id, token_hash, device_info, ip_address, expires_at)
-     VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '7 days')`,
+     VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '24 hours')`,
     [tokenId, userId, tokenHash, JSON.stringify(deviceInfo), ipAddress ?? null],
   );
 
@@ -104,7 +105,7 @@ async function buildAuthResponse(
     tokens: {
       accessToken,
       refreshToken,
-      expiresIn: '15m',
+      expiresIn: env.JWT_ACCESS_EXPIRES_IN,
     },
   };
 }

@@ -500,6 +500,12 @@ router.get(
 );
 
 router.get(
+  '/analytics/dashboard',
+  requirePermission('analytics', 'read'),
+  examController.getAdminDashboard,
+);
+
+router.get(
   '/analytics/tests/:testId',
   validate(testIdParam, 'params'),
   requirePermission('analytics', 'read'),

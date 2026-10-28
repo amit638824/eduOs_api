@@ -265,3 +265,344 @@ export async function getTestQuestionAnalytics(testId: string, organizationId: s
     hard_questions: hardQuestions,
   };
 }
+
+function num(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function sqlDate(date: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
+}
+
+function dayKey(value: unknown): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${value.getFullYear()}-${p(value.getMonth() + 1)}-${p(value.getDate())}`;
+  }
+  const text = String(value ?? '');
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text.slice(0, 10);
+  return dayKey(parsed);
+}
+
+function eachDay(from: Date, to: Date): string[] {
+  const days: string[] = [];
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(0, 0, 0, 0);
+  while (cursor <= end) {
+    days.push(dayKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+function series(rows: Record<string, unknown>[], field: string, days: string[]): number[] {
+  const map = new Map(rows.map((row) => [dayKey(row.day), num(row[field])]));
+  return days.map((day) => Math.round(map.get(day) ?? 0));
+}
+
+function delta(current: number, previous: number): number {
+  if (previous === 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function activityKind(action: string, resource: string): { tag: string; kind: string; title: string } {
+  const text = `${action} ${resource}`.toLowerCase();
+  let tag = 'Updated';
+  if (/create|add|register/.test(text)) tag = 'Created';
+  else if (/delete|remove|revoke/.test(text)) tag = 'Deleted';
+  else if (/publish|complete|submit|issue/.test(text)) tag = 'Completed';
+  else if (/login|new/.test(text)) tag = 'New';
+  let kind = 'doc';
+  if (/student|user/.test(text)) kind = 'users';
+  else if (/question/.test(text)) kind = 'database';
+  else if (/result|report|attempt|analytics/.test(text)) kind = 'chart';
+  const title = action.replace(/[._-]+/g, ' ').trim() || 'Activity recorded';
+  return { tag, kind, title: title.charAt(0).toUpperCase() + title.slice(1) };
+}
+
+async function subjectScores(organizationId: string, from: string | null, to: string | null) {
+  const rows = await query(
+    `SELECT s.name AS name, ROUND(AVG(r.percentage), 0) AS score
+     FROM results r
+     JOIN tests t ON t.id = r.test_id
+     JOIN test_questions tq ON tq.test_id = t.id
+     JOIN questions q ON q.id = tq.question_id
+     JOIN topics tp ON tp.id = q.topic_id
+     JOIN chapters ch ON ch.id = tp.chapter_id
+     JOIN subjects s ON s.id = ch.subject_id
+     WHERE t.organization_id = $1
+       AND ($2 IS NULL OR r.created_at >= $2)
+       AND ($3 IS NULL OR r.created_at < $3)
+     GROUP BY s.id, s.name
+     ORDER BY score DESC
+     LIMIT 4`,
+    [organizationId, from, to],
+  );
+  return rows.rows
+    .map((row) => ({ name: String(row.name ?? ''), score: num(row.score) }))
+    .filter((row) => row.name);
+}
+
+async function averageScore(organizationId: string, from: string | null, to: string | null) {
+  const rows = await query(
+    `SELECT ROUND(AVG(r.percentage), 0) AS score
+     FROM results r
+     JOIN tests t ON t.id = r.test_id
+     WHERE t.organization_id = $1
+       AND ($2 IS NULL OR r.created_at >= $2)
+       AND ($3 IS NULL OR r.created_at < $3)`,
+    [organizationId, from, to],
+  );
+  return num(rows.rows[0]?.score);
+}
+
+export async function getAdminDashboard(organizationId: string) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const thirtyAgo = new Date(today);
+  thirtyAgo.setDate(thirtyAgo.getDate() - 29);
+  const sevenAgo = new Date(today);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+
+  const from30 = sqlDate(thirtyAgo);
+  const monthFrom = sqlDate(monthStart);
+  const monthTo = sqlDate(nextMonthStart);
+  const lastFrom = sqlDate(lastMonthStart);
+
+  const [
+    totals,
+    testTrend,
+    studentTrend,
+    attemptTrend,
+    scoreTrend,
+    testDays,
+    studentDays,
+    attemptDays,
+    scoreDays,
+    topStudents,
+    subjectsMonth,
+    subjectsLast,
+    subjectsAll,
+    overallMonth,
+    overallLast,
+    overallAll,
+    logs,
+    recentTests,
+    workflow,
+  ] = await Promise.all([
+    query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM tests WHERE organization_id = $1 AND archived_at IS NULL) AS tests,
+         (SELECT COUNT(*)::int FROM students WHERE organization_id = $1) AS students,
+         (SELECT COUNT(*)::int FROM test_attempts ta JOIN tests t ON t.id = ta.test_id WHERE t.organization_id = $1) AS attempts,
+         (SELECT ROUND(AVG(r.percentage), 0) FROM results r JOIN tests t ON t.id = r.test_id WHERE t.organization_id = $1) AS average_score`,
+      [organizationId],
+    ),
+    query(
+      `SELECT
+         SUM(CASE WHEN created_at >= $2 AND created_at < $3 THEN 1 ELSE 0 END)::int AS current_count,
+         SUM(CASE WHEN created_at >= $4 AND created_at < $2 THEN 1 ELSE 0 END)::int AS previous_count
+       FROM tests
+       WHERE organization_id = $1 AND archived_at IS NULL AND created_at >= $4`,
+      [organizationId, monthFrom, monthTo, lastFrom],
+    ),
+    query(
+      `SELECT
+         SUM(CASE WHEN created_at >= $2 AND created_at < $3 THEN 1 ELSE 0 END)::int AS current_count,
+         SUM(CASE WHEN created_at >= $4 AND created_at < $2 THEN 1 ELSE 0 END)::int AS previous_count
+       FROM students
+       WHERE organization_id = $1 AND created_at >= $4`,
+      [organizationId, monthFrom, monthTo, lastFrom],
+    ),
+    query(
+      `SELECT
+         SUM(CASE WHEN ta.created_at >= $2 AND ta.created_at < $3 THEN 1 ELSE 0 END)::int AS current_count,
+         SUM(CASE WHEN ta.created_at >= $4 AND ta.created_at < $2 THEN 1 ELSE 0 END)::int AS previous_count
+       FROM test_attempts ta
+       JOIN tests t ON t.id = ta.test_id
+       WHERE t.organization_id = $1 AND ta.created_at >= $4`,
+      [organizationId, monthFrom, monthTo, lastFrom],
+    ),
+    query(
+      `SELECT
+         AVG(CASE WHEN r.created_at >= $2 AND r.created_at < $3 THEN r.percentage END) AS current_count,
+         AVG(CASE WHEN r.created_at >= $4 AND r.created_at < $2 THEN r.percentage END) AS previous_count
+       FROM results r
+       JOIN tests t ON t.id = r.test_id
+       WHERE t.organization_id = $1 AND r.created_at >= $4`,
+      [organizationId, monthFrom, monthTo, lastFrom],
+    ),
+    query(
+      `SELECT DATE(created_at) AS day, COUNT(*)::int AS cnt
+       FROM tests
+       WHERE organization_id = $1 AND archived_at IS NULL AND created_at >= $2
+       GROUP BY DATE(created_at)`,
+      [organizationId, from30],
+    ),
+    query(
+      `SELECT DATE(created_at) AS day, COUNT(*)::int AS cnt
+       FROM students
+       WHERE organization_id = $1 AND created_at >= $2
+       GROUP BY DATE(created_at)`,
+      [organizationId, from30],
+    ),
+    query(
+      `SELECT DATE(ta.created_at) AS day, COUNT(*)::int AS cnt
+       FROM test_attempts ta
+       JOIN tests t ON t.id = ta.test_id
+       WHERE t.organization_id = $1 AND ta.created_at >= $2
+       GROUP BY DATE(ta.created_at)`,
+      [organizationId, from30],
+    ),
+    query(
+      `SELECT DATE(r.created_at) AS day, ROUND(AVG(r.percentage), 0) AS avg_score
+       FROM results r
+       JOIN tests t ON t.id = r.test_id
+       WHERE t.organization_id = $1 AND r.created_at >= $2
+       GROUP BY DATE(r.created_at)`,
+      [organizationId, from30],
+    ),
+    query(
+      `SELECT st.id, u.first_name, u.last_name, ROUND(AVG(r.percentage), 0) AS score
+       FROM results r
+       JOIN students st ON st.id = r.student_id
+       JOIN users u ON u.id = st.user_id
+       JOIN tests t ON t.id = r.test_id
+       WHERE t.organization_id = $1
+       GROUP BY st.id, u.first_name, u.last_name
+       ORDER BY score DESC
+       LIMIT 5`,
+      [organizationId],
+    ),
+    subjectScores(organizationId, monthFrom, monthTo),
+    subjectScores(organizationId, lastFrom, monthFrom),
+    subjectScores(organizationId, null, null),
+    averageScore(organizationId, monthFrom, monthTo),
+    averageScore(organizationId, lastFrom, monthFrom),
+    averageScore(organizationId, null, null),
+    query(
+      `SELECT al.id, al.action, al.resource, al.created_at, u.email AS user_email,
+              u.first_name, u.last_name
+       FROM audit_logs al
+       LEFT JOIN users u ON u.id = al.user_id
+       WHERE al.organization_id = $1
+       ORDER BY al.created_at DESC
+       LIMIT 4`,
+      [organizationId],
+    ),
+    query(
+      `SELECT id, title, status, created_at
+       FROM tests
+       WHERE organization_id = $1 AND archived_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 4`,
+      [organizationId],
+    ),
+    query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM questions WHERE organization_id = $1 AND archived_at IS NULL) AS questions,
+         (SELECT COUNT(*)::int FROM tests WHERE organization_id = $1 AND archived_at IS NULL) AS tests,
+         (SELECT COUNT(DISTINCT t.id)::int FROM tests t
+            JOIN test_questions tq ON tq.test_id = t.id
+           WHERE t.organization_id = $1 AND t.archived_at IS NULL) AS with_questions,
+         (SELECT COUNT(*)::int FROM tests
+           WHERE organization_id = $1 AND archived_at IS NULL
+             AND (published_at IS NOT NULL OR status IN ('scheduled', 'live', 'completed'))) AS published,
+         (SELECT COUNT(*)::int FROM test_assignments ta
+            JOIN tests t ON t.id = ta.test_id
+           WHERE t.organization_id = $1) AS assigned`,
+      [organizationId],
+    ),
+  ]);
+
+  const days30 = eachDay(thirtyAgo, today);
+  const days7 = days30.slice(-7);
+  const monthDays = eachDay(monthStart, today);
+  const scoreMap = series(scoreDays.rows, 'avg_score', days30);
+  const toPoints = (days: string[], values: number[]) =>
+    days.map((day, index) => ({
+      label: day.slice(5),
+      value: values[index] ?? 0,
+    }));
+
+  const auditActivity = logs.rows.map((row) => {
+    const meta = activityKind(String(row.action ?? ''), String(row.resource ?? ''));
+    const person = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+    return {
+      id: String(row.id),
+      title: meta.title,
+      subtitle: person || String(row.user_email ?? row.resource ?? 'System'),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      tag: meta.tag,
+      kind: meta.kind,
+    };
+  });
+
+  const activity = auditActivity.length
+    ? auditActivity
+    : recentTests.rows.map((row) => ({
+        id: String(row.id),
+        title: 'Test created',
+        subtitle: String(row.title ?? 'Untitled test'),
+        createdAt: new Date(String(row.created_at)).toISOString(),
+        tag: String(row.status ?? 'draft') === 'draft' ? 'Created' : 'Completed',
+        kind: 'doc',
+      }));
+
+  const core = totals.rows[0] ?? {};
+  const flow = workflow.rows[0] ?? {};
+
+  return {
+    totals: {
+      tests: num(core.tests),
+      students: num(core.students),
+      attempts: num(core.attempts),
+      averageScore: num(core.average_score),
+    },
+    trends: {
+      tests: delta(num(testTrend.rows[0]?.current_count), num(testTrend.rows[0]?.previous_count)),
+      students: delta(num(studentTrend.rows[0]?.current_count), num(studentTrend.rows[0]?.previous_count)),
+      attempts: delta(num(attemptTrend.rows[0]?.current_count), num(attemptTrend.rows[0]?.previous_count)),
+      averageScore: delta(num(scoreTrend.rows[0]?.current_count), num(scoreTrend.rows[0]?.previous_count)),
+    },
+    sparklines: {
+      tests: series(testDays.rows, 'cnt', days7),
+      students: series(studentDays.rows, 'cnt', days7),
+      attempts: series(attemptDays.rows, 'cnt', days7),
+      averageScore: series(scoreDays.rows, 'avg_score', days7),
+    },
+    performance: {
+      last7: toPoints(days7, scoreMap.slice(-7)),
+      last30: toPoints(days30, scoreMap),
+      month: toPoints(monthDays, series(scoreDays.rows, 'avg_score', monthDays)),
+    },
+    topStudents: topStudents.rows.map((row) => ({
+      id: String(row.id),
+      name: [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Student',
+      score: num(row.score),
+    })),
+    subjects: {
+      month: subjectsMonth,
+      lastMonth: subjectsLast,
+      all: subjectsAll,
+      overall: { month: overallMonth, lastMonth: overallLast, all: overallAll },
+    },
+    activity,
+    workflow: {
+      questions: num(flow.questions),
+      tests: num(flow.tests),
+      withQuestions: num(flow.with_questions),
+      published: num(flow.published),
+      assigned: num(flow.assigned),
+    },
+  };
+}

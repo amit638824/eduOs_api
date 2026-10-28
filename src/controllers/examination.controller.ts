@@ -535,6 +535,16 @@ export async function getAnalytics(req: Request, res: Response, next: NextFuncti
   }
 }
 
+export async function getAdminDashboard(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { orgId } = await orgContext(req);
+    const data = await analyticsService.getAdminDashboard(orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function getTestAnalytics(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
