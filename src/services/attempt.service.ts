@@ -1699,6 +1699,7 @@ export async function listAttempts(
   filters?: {
     testId?: string;
     studentId?: string;
+    search?: string;
   },
 ) {
   const offset =
@@ -1727,6 +1728,17 @@ export async function listAttempts(
 
     where +=
       ` AND ta.student_id = $${params.length}`;
+  }
+
+  if (filters?.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    where += ` AND (
+      t.title ILIKE $${params.length}
+      OR u.first_name ILIKE $${params.length}
+      OR u.last_name ILIKE $${params.length}
+      OR u.email ILIKE $${params.length}
+      OR ta.status ILIKE $${params.length}
+    )`;
   }
 
   params.push(
@@ -1777,6 +1789,10 @@ export async function listAttempts(
          FROM test_attempts ta
          JOIN tests t
            ON t.id = ta.test_id
+         JOIN students s
+           ON s.id = ta.student_id
+         JOIN users u
+           ON u.id = s.user_id
          WHERE ${where}`,
         params.slice(0, -2),
       ),

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { closeDatabase, checkDatabaseConnection, ensureDatabaseExists, query } from './config/database.js';
+import { initRealtime } from './realtime/socket.js';
 
 async function bootstrap() {
   try {
@@ -60,6 +61,7 @@ async function bootstrap() {
   const server = app.listen(env.PORT, () => {
     console.log(`Mindsprint API running on port ${env.PORT} [${env.NODE_ENV}]`);
   });
+  initRealtime(server);
 
   const shutdown = async (signal: string) => {
     console.log(`\n${signal} received. Shutting down gracefully...`);

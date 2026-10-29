@@ -4,6 +4,7 @@ import { PaginatedResult } from '../types/express.js';
 import { notificationMailTemplate } from '../templates/emailTemplates.js';
 import { sendEmail, sendExamAssignmentEmail } from './email.service.js';
 import { isSmtpConfigured } from '../config/env.js';
+import { emitNotification, emitUnreadCount } from '../realtime/socket.js';
 
 export async function listNotifications(userId: string, page: number, limit: number) {
   const offset = (page - 1) * limit;
@@ -36,6 +37,16 @@ export async function createNotification(input: {
     [input.userId, input.channel, input.title, input.body, JSON.stringify(input.data ?? {})],
   );
 
+  const created = result.rows[0];
+  if (input.channel === 'in_app') {
+    try {
+      const unread = await getUnreadCount(input.userId);
+      emitNotification(input.userId, created, unread.count);
+    } catch (err) {
+      console.error('[notification] realtime emit failed:', err);
+    }
+  }
+
   if (input.channel === 'email' && isSmtpConfigured) {
     const user = await query<{ email: string }>(
       `SELECT email FROM users WHERE id = $1`,
@@ -51,7 +62,7 @@ export async function createNotification(input: {
     }
   }
 
-  return result.rows[0];
+  return created;
 }
 
 /** In-app notification for a user — never throws (safe to fire-and-forget). */
@@ -186,6 +197,8 @@ export async function markNotificationRead(userId: string, notificationId: strin
     [notificationId, userId],
   );
   if (!result.rows[0]) throw new NotFoundError('Notification');
+  const unread = await getUnreadCount(userId);
+  emitUnreadCount(userId, unread.count);
   return { message: 'Marked as read' };
 }
 
@@ -193,6 +206,7 @@ export async function markAllNotificationsRead(userId: string) {
   await query(`UPDATE notifications SET is_read = TRUE WHERE user_id = $1 AND is_read = FALSE`, [
     userId,
   ]);
+  emitUnreadCount(userId, 0);
   return { message: 'All notifications marked as read' };
 }
 

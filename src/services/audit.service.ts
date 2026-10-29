@@ -8,6 +8,7 @@ export async function listAuditLogs(
   limit: number,
   isSuperAdmin: boolean,
   requesterOrgId: string | null,
+  filters?: { search?: string; action?: string },
 ) {
   if (!isSuperAdmin && organizationId !== requesterOrgId) {
     throw new ForbiddenError('Cannot view audit logs for another organization');
@@ -22,6 +23,19 @@ export async function listAuditLogs(
     params.push(requesterOrgId);
     where = `al.organization_id = $${params.length}`;
   }
+  if (filters?.action) {
+    params.push(filters.action);
+    where += ` AND al.action = $${params.length}`;
+  }
+  if (filters?.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    where += ` AND (
+      al.action ILIKE $${params.length}
+      OR al.resource ILIKE $${params.length}
+      OR CAST(al.resource_id AS CHAR) ILIKE $${params.length}
+      OR u.email ILIKE $${params.length}
+    )`;
+  }
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
@@ -35,7 +49,13 @@ export async function listAuditLogs(
        ORDER BY al.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
-    query(`SELECT COUNT(*)::int AS total FROM audit_logs al WHERE ${where}`, params.slice(0, -2)),
+    query(
+      `SELECT COUNT(*)::int AS total
+       FROM audit_logs al
+       LEFT JOIN users u ON u.id = al.user_id
+       WHERE ${where}`,
+      params.slice(0, -2),
+    ),
   ]);
   const total = count.rows[0].total as number;
   return {

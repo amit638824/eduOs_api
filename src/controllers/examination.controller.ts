@@ -109,13 +109,14 @@ export async function createTopicForSubject(req: Request, res: Response, next: N
 export async function listQuestions(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit, status, type } = vQuery(req) as unknown as {
+    const { page, limit, status, type, search } = vQuery(req) as unknown as {
       page: number;
       limit: number;
       status?: string;
       type?: string;
+      search?: string;
     };
-    const result = await questionService.listQuestions(orgId, page, limit, { status, type });
+    const result = await questionService.listQuestions(orgId, page, limit, { status, type, search });
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -220,8 +221,13 @@ export async function createCategory(req: Request, res: Response, next: NextFunc
 export async function listTests(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit, status } = vQuery(req) as unknown as { page: number; limit: number; status?: string };
-    const result = await testService.listTests(orgId, page, limit, status);
+    const { page, limit, status, search } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      status?: string;
+      search?: string;
+    };
+    const result = await testService.listTests(orgId, page, limit, status, search);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -481,11 +487,12 @@ export async function getResult(req: Request, res: Response, next: NextFunction)
 export async function listAttempts(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit, testId, studentId } = vQuery(req) as unknown as {
+    const { page, limit, testId, studentId, search } = vQuery(req) as unknown as {
       page: number;
       limit: number;
       testId?: string;
       studentId?: string;
+      search?: string;
     };
     const staffRoles = ['super_admin', 'org_admin', 'branch_admin', 'staff', 'teacher', 'examiner', 'evaluator'];
     const isStaff = req.user!.roles.some((r) => staffRoles.includes(r));
@@ -496,6 +503,7 @@ export async function listAttempts(req: Request, res: Response, next: NextFuncti
     const result = await attemptService.listAttempts(orgId, page, limit, {
       testId,
       studentId: filterStudentId,
+      search,
     });
     res.json({ success: true, ...result });
   } catch (e) {

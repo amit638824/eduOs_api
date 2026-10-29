@@ -83,6 +83,7 @@ export async function listTests(
   page: number,
   limit: number,
   status?: string,
+  search?: string,
 ) {
   await query(
     `UPDATE tests
@@ -103,6 +104,11 @@ export async function listTests(
   if (status) {
     params.push(status);
     where += ` AND status = $${params.length}`;
+  }
+
+  if (search?.trim()) {
+    params.push(`%${search.trim()}%`);
+    where += ` AND (title ILIKE $${params.length} OR CAST(description AS CHAR) ILIKE $${params.length})`;
   }
 
   params.push(limit, offset);
@@ -892,16 +898,28 @@ export async function assignTestToStudent(
     }
   }
 
+  const assigned = await query<{ total: number }>(
+    `SELECT COUNT(*)::int AS total
+     FROM test_assignments ta
+     JOIN tests t ON t.id = ta.test_id
+     WHERE ta.assignee_type = 'student'
+       AND ta.assignee_id = $1
+       AND t.archived_at IS NULL`,
+    [studentId],
+  );
+  const assignedCount = Number(assigned.rows[0]?.total ?? 1);
+
   void notificationService.notifyStudentByStudentId(
     studentId,
     'Test assigned',
     status === 'live'
-      ? `"${title}" has been assigned to you and is live. Open My Tests to start.`
-      : `"${title}" has been assigned to you. You will be notified when it goes live.`,
+      ? `"${title}" is assigned and live. You have ${assignedCount} assigned test${assignedCount === 1 ? '' : 's'}.`
+      : `"${title}" has been assigned to you. You have ${assignedCount} assigned test${assignedCount === 1 ? '' : 's'}.`,
     {
       testId,
       type: 'test_assigned',
       status,
+      assignedCount,
     },
   );
 

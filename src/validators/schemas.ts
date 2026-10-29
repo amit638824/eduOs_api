@@ -77,7 +77,20 @@ export const updateBranchSchema = createBranchSchema.partial().extend({
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(200).default(20),
+  limit: z.coerce.number().int().min(1).max(200).default(10),
+  search: z.string().trim().optional(),
+});
+
+export const listOrganizationsQuerySchema = paginationSchema.extend({
+  isActive: z
+    .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+    .optional()
+    .transform((v) => {
+      if (v === undefined) return undefined;
+      if (v === true || v === 'true' || v === '1') return true;
+      if (v === false || v === 'false' || v === '0') return false;
+      return undefined;
+    }),
 });
 
 export const listAssignableStudentsQuerySchema = paginationSchema.extend({
@@ -241,6 +254,14 @@ export const listAttemptsQuerySchema = paginationSchema.extend({
   studentId: z.string().uuid().optional(),
 });
 
+export const listPaymentsQuerySchema = paginationSchema.extend({
+  status: z.string().optional(),
+});
+
+export const listAuditLogsQuerySchema = paginationSchema.extend({
+  action: z.string().optional(),
+});
+
 export const forgotPasswordSchema = z.object({
   email: z
     .string()
@@ -362,7 +383,7 @@ export const updateTestSchema = createTestSchema.partial().extend({
 
 export const listUsersQuerySchema = paginationSchema.extend({
   role: z.string().optional(),
-  search: z.string().optional(),
+  status: z.enum(['active', 'inactive', 'pending', 'suspended']).optional(),
 });
 
 export const aiQuestionTypeSchema = z.enum([

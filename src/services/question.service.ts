@@ -51,7 +51,7 @@ export async function listQuestions(
   organizationId: string,
   page: number,
   limit: number,
-  filters?: { status?: string; type?: string },
+  filters?: { status?: string; type?: string; search?: string },
 ) {
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
@@ -63,6 +63,14 @@ export async function listQuestions(
   if (filters?.type) {
     params.push(filters.type);
     where += ` AND q.type = $${params.length}`;
+  }
+  if (filters?.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    where += ` AND (
+      CAST(q.content AS CHAR) ILIKE $${params.length}
+      OR q.type ILIKE $${params.length}
+      OR q.status ILIKE $${params.length}
+    )`;
   }
   params.push(limit, offset);
 

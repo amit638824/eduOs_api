@@ -127,8 +127,24 @@ export async function createOrganization(
   });
 }
 
-export async function listOrganizations(page: number, limit: number): Promise<PaginatedResult<unknown>> {
+export async function listOrganizations(
+  page: number,
+  limit: number,
+  search?: string,
+  isActive?: boolean,
+): Promise<PaginatedResult<unknown>> {
   const offset = (page - 1) * limit;
+  const params: unknown[] = [];
+  let where = 'o.deleted_at IS NULL';
+  if (search?.trim()) {
+    params.push(`%${search.trim()}%`);
+    where += ` AND (o.name ILIKE $${params.length} OR o.slug ILIKE $${params.length})`;
+  }
+  if (typeof isActive === 'boolean') {
+    params.push(isActive);
+    where += ` AND o.is_active = $${params.length}`;
+  }
+  params.push(limit, offset);
 
   const [dataResult, countResult] = await Promise.all([
     query(
@@ -136,11 +152,14 @@ export async function listOrganizations(page: number, limit: number): Promise<Pa
               (SELECT COUNT(*)::int FROM users u WHERE u.organization_id = o.id AND u.deleted_at IS NULL) AS users_count,
               (SELECT COUNT(*)::int FROM branches b WHERE b.organization_id = o.id AND b.deleted_at IS NULL) AS branches_count
        FROM organizations o
-       WHERE o.deleted_at IS NULL
-       ORDER BY o.created_at DESC LIMIT $1 OFFSET $2`,
-      [limit, offset],
+       WHERE ${where}
+       ORDER BY o.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
     ),
-    query('SELECT COUNT(*)::int AS total FROM organizations WHERE deleted_at IS NULL'),
+    query(
+      `SELECT COUNT(*)::int AS total FROM organizations o WHERE ${where}`,
+      params.slice(0, -2),
+    ),
   ]);
 
   const total = countResult.rows[0].total as number;

@@ -67,7 +67,13 @@ export async function listCertificates(req: Request, res: Response, next: NextFu
       res.json({ success: true, data, pagination: { page: 1, limit: data.length, total: data.length, totalPages: 1 } });
       return;
     }
-    const result = await certificateService.listCertificatesForOrg(orgId, Number(page), Number(limit));
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const result = await certificateService.listCertificatesForOrg(
+      orgId,
+      Number(page),
+      Number(limit),
+      search,
+    );
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);

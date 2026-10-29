@@ -11,6 +11,7 @@ export async function listPayments(
   page: number,
   limit: number,
   userId?: string,
+  filters?: { search?: string; status?: string },
 ) {
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
@@ -18,6 +19,20 @@ export async function listPayments(
   if (userId) {
     params.push(userId);
     where += ` AND p.user_id = $${params.length}`;
+  }
+  if (filters?.status) {
+    params.push(filters.status);
+    where += ` AND p.status = $${params.length}`;
+  }
+  if (filters?.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    where += ` AND (
+      u.email ILIKE $${params.length}
+      OR u.first_name ILIKE $${params.length}
+      OR u.last_name ILIKE $${params.length}
+      OR CAST(p.gateway_ref AS CHAR) ILIKE $${params.length}
+      OR CAST(p.id AS CHAR) ILIKE $${params.length}
+    )`;
   }
   params.push(limit, offset);
 
@@ -29,7 +44,10 @@ export async function listPayments(
        WHERE ${where} ORDER BY p.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
-    query(`SELECT COUNT(*)::int AS total FROM payments p WHERE ${where}`, params.slice(0, -2)),
+    query(
+      `SELECT COUNT(*)::int AS total FROM payments p JOIN users u ON u.id = p.user_id WHERE ${where}`,
+      params.slice(0, -2),
+    ),
   ]);
   const total = count.rows[0].total as number;
   return {
