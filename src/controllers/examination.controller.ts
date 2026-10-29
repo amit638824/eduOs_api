@@ -546,6 +546,21 @@ export async function getAnalytics(req: Request, res: Response, next: NextFuncti
 export async function getAdminDashboard(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
+    const roles = req.user!.roles;
+    const isOrgStaff = roles.some((role) =>
+      ['super_admin', 'org_admin', 'staff', 'branch_admin'].includes(role),
+    );
+    if (roles.includes('student') && !isOrgStaff && !roles.includes('teacher')) {
+      const studentId = await attemptService.getStudentIdByUserId(req.user!.id);
+      const data = await analyticsService.getStudentDashboard(studentId, orgId);
+      res.json({ success: true, data });
+      return;
+    }
+    if (roles.includes('teacher') && !isOrgStaff) {
+      const data = await analyticsService.getTeacherDashboard(orgId);
+      res.json({ success: true, data });
+      return;
+    }
     const data = await analyticsService.getAdminDashboard(orgId);
     res.json({ success: true, data });
   } catch (e) {

@@ -606,3 +606,280 @@ export async function getAdminDashboard(organizationId: string) {
     },
   };
 }
+
+export async function getTeacherDashboard(organizationId: string) {
+  const dash = await getAdminDashboard(organizationId);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const thirtyAgo = new Date(today);
+  thirtyAgo.setDate(thirtyAgo.getDate() - 29);
+  const monthFrom = sqlDate(monthStart);
+  const monthTo = sqlDate(nextMonthStart);
+  const lastFrom = sqlDate(lastMonthStart);
+  const from30 = sqlDate(thirtyAgo);
+
+  const [count, trend, days] = await Promise.all([
+    query(
+      `SELECT COUNT(*)::int AS total FROM questions WHERE organization_id = $1 AND archived_at IS NULL`,
+      [organizationId],
+    ),
+    query(
+      `SELECT
+         SUM(CASE WHEN created_at >= $2 AND created_at < $3 THEN 1 ELSE 0 END)::int AS current_count,
+         SUM(CASE WHEN created_at >= $4 AND created_at < $2 THEN 1 ELSE 0 END)::int AS previous_count
+       FROM questions
+       WHERE organization_id = $1 AND archived_at IS NULL AND created_at >= $4`,
+      [organizationId, monthFrom, monthTo, lastFrom],
+    ),
+    query(
+      `SELECT DATE(created_at) AS day, COUNT(*)::int AS cnt
+       FROM questions
+       WHERE organization_id = $1 AND archived_at IS NULL AND created_at >= $2
+       GROUP BY DATE(created_at)`,
+      [organizationId, from30],
+    ),
+  ]);
+
+  const days7 = eachDay(thirtyAgo, today).slice(-7);
+  return {
+    ...dash,
+    totals: { ...dash.totals, students: num(count.rows[0]?.total) },
+    trends: {
+      ...dash.trends,
+      students: delta(num(trend.rows[0]?.current_count), num(trend.rows[0]?.previous_count)),
+    },
+    sparklines: { ...dash.sparklines, students: series(days.rows, 'cnt', days7) },
+  };
+}
+
+export async function getStudentDashboard(studentId: string, organizationId: string) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const thirtyAgo = new Date(today);
+  thirtyAgo.setDate(thirtyAgo.getDate() - 29);
+  const from30 = sqlDate(thirtyAgo);
+  const monthFrom = sqlDate(monthStart);
+  const monthTo = sqlDate(nextMonthStart);
+  const lastFrom = sqlDate(lastMonthStart);
+  const days30 = eachDay(thirtyAgo, today);
+  const days7 = days30.slice(-7);
+  const monthDays = eachDay(monthStart, today);
+
+  const [totals, assignTrend, attemptTrend, resultTrend, scoreTrend, attemptDays, scoreDays, recent, subjectsMonth, subjectsLast, subjectsAll, overallMonth, overallLast, overallAll, flow] =
+    await Promise.all([
+      query(
+        `SELECT
+           (SELECT COUNT(DISTINCT t.id)::int
+              FROM test_assignments ta JOIN tests t ON t.id = ta.test_id
+             WHERE ta.assignee_type = 'student' AND ta.assignee_id = $1
+               AND t.organization_id = $2 AND t.archived_at IS NULL) AS assigned,
+           (SELECT COUNT(*)::int FROM test_attempts ta JOIN tests t ON t.id = ta.test_id
+             WHERE ta.student_id = $1 AND t.organization_id = $2 AND ta.status = 'in_progress') AS in_progress,
+           (SELECT COUNT(*)::int FROM test_attempts ta JOIN tests t ON t.id = ta.test_id
+             WHERE ta.student_id = $1 AND t.organization_id = $2) AS attempts,
+           (SELECT ROUND(AVG(r.percentage), 0) FROM results r JOIN tests t ON t.id = r.test_id
+             WHERE r.student_id = $1 AND t.organization_id = $2) AS average_score`,
+        [studentId, organizationId],
+      ),
+      query(
+        `SELECT
+           SUM(CASE WHEN ta.created_at >= $3 AND ta.created_at < $4 THEN 1 ELSE 0 END)::int AS current_count,
+           SUM(CASE WHEN ta.created_at >= $5 AND ta.created_at < $3 THEN 1 ELSE 0 END)::int AS previous_count
+         FROM test_assignments ta
+         JOIN tests t ON t.id = ta.test_id
+         WHERE ta.assignee_type = 'student' AND ta.assignee_id = $1 AND t.organization_id = $2 AND ta.created_at >= $5`,
+        [studentId, organizationId, monthFrom, monthTo, lastFrom],
+      ),
+      query(
+        `SELECT
+           SUM(CASE WHEN ta.created_at >= $3 AND ta.created_at < $4 THEN 1 ELSE 0 END)::int AS current_count,
+           SUM(CASE WHEN ta.created_at >= $5 AND ta.created_at < $3 THEN 1 ELSE 0 END)::int AS previous_count
+         FROM test_attempts ta
+         JOIN tests t ON t.id = ta.test_id
+         WHERE ta.student_id = $1 AND t.organization_id = $2 AND ta.created_at >= $5`,
+        [studentId, organizationId, monthFrom, monthTo, lastFrom],
+      ),
+      query(
+        `SELECT
+           SUM(CASE WHEN r.created_at >= $3 AND r.created_at < $4 THEN 1 ELSE 0 END)::int AS current_count,
+           SUM(CASE WHEN r.created_at >= $5 AND r.created_at < $3 THEN 1 ELSE 0 END)::int AS previous_count
+         FROM results r
+         JOIN tests t ON t.id = r.test_id
+         WHERE r.student_id = $1 AND t.organization_id = $2 AND r.created_at >= $5`,
+        [studentId, organizationId, monthFrom, monthTo, lastFrom],
+      ),
+      query(
+        `SELECT
+           AVG(CASE WHEN r.created_at >= $3 AND r.created_at < $4 THEN r.percentage END) AS current_count,
+           AVG(CASE WHEN r.created_at >= $5 AND r.created_at < $3 THEN r.percentage END) AS previous_count
+         FROM results r
+         JOIN tests t ON t.id = r.test_id
+         WHERE r.student_id = $1 AND t.organization_id = $2 AND r.created_at >= $5`,
+        [studentId, organizationId, monthFrom, monthTo, lastFrom],
+      ),
+      query(
+        `SELECT DATE(ta.created_at) AS day, COUNT(*)::int AS cnt
+         FROM test_attempts ta JOIN tests t ON t.id = ta.test_id
+         WHERE ta.student_id = $1 AND t.organization_id = $2 AND ta.created_at >= $3
+         GROUP BY DATE(ta.created_at)`,
+        [studentId, organizationId, from30],
+      ),
+      query(
+        `SELECT DATE(r.created_at) AS day, ROUND(AVG(r.percentage), 0) AS avg_score
+         FROM results r JOIN tests t ON t.id = r.test_id
+         WHERE r.student_id = $1 AND t.organization_id = $2 AND r.created_at >= $3
+         GROUP BY DATE(r.created_at)`,
+        [studentId, organizationId, from30],
+      ),
+      query(
+        `SELECT ta.id, t.title, ta.status, ta.created_at, r.percentage
+         FROM test_attempts ta
+         JOIN tests t ON t.id = ta.test_id
+         LEFT JOIN results r ON r.attempt_id = ta.id
+         WHERE ta.student_id = $1 AND t.organization_id = $2
+         ORDER BY ta.created_at DESC
+         LIMIT 5`,
+        [studentId, organizationId],
+      ),
+      query(
+        `SELECT s.name AS name, ROUND(AVG(r.percentage), 0) AS score
+         FROM results r
+         JOIN tests t ON t.id = r.test_id
+         JOIN test_questions tq ON tq.test_id = t.id
+         JOIN questions q ON q.id = tq.question_id
+         JOIN topics tp ON tp.id = q.topic_id
+         JOIN chapters ch ON ch.id = tp.chapter_id
+         JOIN subjects s ON s.id = ch.subject_id
+         WHERE r.student_id = $1 AND t.organization_id = $2
+           AND r.created_at >= $3 AND r.created_at < $4
+         GROUP BY s.id, s.name ORDER BY score DESC LIMIT 4`,
+        [studentId, organizationId, monthFrom, monthTo],
+      ),
+      query(
+        `SELECT s.name AS name, ROUND(AVG(r.percentage), 0) AS score
+         FROM results r
+         JOIN tests t ON t.id = r.test_id
+         JOIN test_questions tq ON tq.test_id = t.id
+         JOIN questions q ON q.id = tq.question_id
+         JOIN topics tp ON tp.id = q.topic_id
+         JOIN chapters ch ON ch.id = tp.chapter_id
+         JOIN subjects s ON s.id = ch.subject_id
+         WHERE r.student_id = $1 AND t.organization_id = $2
+           AND r.created_at >= $3 AND r.created_at < $4
+         GROUP BY s.id, s.name ORDER BY score DESC LIMIT 4`,
+        [studentId, organizationId, lastFrom, monthFrom],
+      ),
+      query(
+        `SELECT s.name AS name, ROUND(AVG(r.percentage), 0) AS score
+         FROM results r
+         JOIN tests t ON t.id = r.test_id
+         JOIN test_questions tq ON tq.test_id = t.id
+         JOIN questions q ON q.id = tq.question_id
+         JOIN topics tp ON tp.id = q.topic_id
+         JOIN chapters ch ON ch.id = tp.chapter_id
+         JOIN subjects s ON s.id = ch.subject_id
+         WHERE r.student_id = $1 AND t.organization_id = $2
+         GROUP BY s.id, s.name ORDER BY score DESC LIMIT 4`,
+        [studentId, organizationId],
+      ),
+      query(
+        `SELECT ROUND(AVG(r.percentage), 0) AS score FROM results r JOIN tests t ON t.id = r.test_id
+         WHERE r.student_id = $1 AND t.organization_id = $2 AND r.created_at >= $3 AND r.created_at < $4`,
+        [studentId, organizationId, monthFrom, monthTo],
+      ),
+      query(
+        `SELECT ROUND(AVG(r.percentage), 0) AS score FROM results r JOIN tests t ON t.id = r.test_id
+         WHERE r.student_id = $1 AND t.organization_id = $2 AND r.created_at >= $3 AND r.created_at < $4`,
+        [studentId, organizationId, lastFrom, monthFrom],
+      ),
+      query(
+        `SELECT ROUND(AVG(r.percentage), 0) AS score FROM results r JOIN tests t ON t.id = r.test_id
+         WHERE r.student_id = $1 AND t.organization_id = $2`,
+        [studentId, organizationId],
+      ),
+      query(
+        `SELECT
+           (SELECT COUNT(*)::int FROM test_assignments ta JOIN tests t ON t.id = ta.test_id
+             WHERE ta.assignee_type = 'student' AND ta.assignee_id = $1 AND t.organization_id = $2) AS assigned,
+           (SELECT COUNT(*)::int FROM test_attempts ta JOIN tests t ON t.id = ta.test_id
+             WHERE ta.student_id = $1 AND t.organization_id = $2) AS attempts,
+           (SELECT COUNT(*)::int FROM results r JOIN tests t ON t.id = r.test_id
+             WHERE r.student_id = $1 AND t.organization_id = $2) AS results,
+           (SELECT COUNT(*)::int FROM certificates c
+             WHERE c.student_id = $1 AND c.organization_id = $2 AND c.status = 'issued') AS certificates`,
+        [studentId, organizationId],
+      ),
+    ]);
+
+  const mapSubjects = (rows: Record<string, unknown>[]) =>
+    rows
+      .map((row) => ({ name: String(row.name ?? ''), score: num(row.score) }))
+      .filter((row) => row.name);
+  const scoreMap = series(scoreDays.rows, 'avg_score', days30);
+  const toPoints = (days: string[], values: number[]) =>
+    days.map((day, index) => ({ label: day.slice(5), value: values[index] ?? 0 }));
+  const core = totals.rows[0] ?? {};
+  const steps = flow.rows[0] ?? {};
+
+  return {
+    totals: {
+      tests: num(core.assigned),
+      students: num(core.in_progress),
+      attempts: num(core.attempts),
+      averageScore: num(core.average_score),
+    },
+    trends: {
+      tests: delta(num(assignTrend.rows[0]?.current_count), num(assignTrend.rows[0]?.previous_count)),
+      students: delta(num(resultTrend.rows[0]?.current_count), num(resultTrend.rows[0]?.previous_count)),
+      attempts: delta(num(attemptTrend.rows[0]?.current_count), num(attemptTrend.rows[0]?.previous_count)),
+      averageScore: delta(num(scoreTrend.rows[0]?.current_count), num(scoreTrend.rows[0]?.previous_count)),
+    },
+    sparklines: {
+      tests: series(attemptDays.rows, 'cnt', days7),
+      students: series(scoreDays.rows, 'avg_score', days7),
+      attempts: series(attemptDays.rows, 'cnt', days7),
+      averageScore: series(scoreDays.rows, 'avg_score', days7),
+    },
+    performance: {
+      last7: toPoints(days7, scoreMap.slice(-7)),
+      last30: toPoints(days30, scoreMap),
+      month: toPoints(monthDays, series(scoreDays.rows, 'avg_score', monthDays)),
+    },
+    topStudents: recent.rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.title ?? 'Test'),
+      score: num(row.percentage),
+    })),
+    subjects: {
+      month: mapSubjects(subjectsMonth.rows),
+      lastMonth: mapSubjects(subjectsLast.rows),
+      all: mapSubjects(subjectsAll.rows),
+      overall: {
+        month: num(overallMonth.rows[0]?.score),
+        lastMonth: num(overallLast.rows[0]?.score),
+        all: num(overallAll.rows[0]?.score),
+      },
+    },
+    activity: recent.rows.map((row) => ({
+      id: String(row.id),
+      title: String(row.title ?? 'Test'),
+      subtitle: String(row.status ?? 'attempt').replace(/_/g, ' '),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      tag: row.percentage != null ? 'Completed' : 'New',
+      kind: 'doc',
+    })),
+    workflow: {
+      questions: num(steps.assigned),
+      tests: num(steps.attempts),
+      withQuestions: num(steps.results),
+      published: num(steps.certificates),
+      assigned: num(steps.certificates),
+    },
+  };
+}
