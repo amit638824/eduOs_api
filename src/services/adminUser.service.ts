@@ -36,14 +36,23 @@ export async function listUsers(
   organizationId: string,
   page: number,
   limit: number,
-  filters?: { role?: string; search?: string },
+  filters?: { role?: string; search?: string; status?: string },
 ) {
   const offset = (page - 1) * limit;
   const params: unknown[] = [organizationId];
   let where = 'u.organization_id = $1 AND u.deleted_at IS NULL';
   if (filters?.search) {
     params.push(`%${filters.search}%`);
-    where += ` AND (u.email ILIKE $${params.length} OR u.first_name ILIKE $${params.length} OR u.last_name ILIKE $${params.length})`;
+    where += ` AND (
+      u.email ILIKE $${params.length}
+      OR u.first_name ILIKE $${params.length}
+      OR u.last_name ILIKE $${params.length}
+      OR CONCAT(u.first_name, ' ', u.last_name) ILIKE $${params.length}
+      OR EXISTS (
+        SELECT 1 FROM students st
+        WHERE st.user_id = u.id AND st.admission_no ILIKE $${params.length}
+      )
+    )`;
   }
   if (filters?.role) {
     params.push(filters.role);
@@ -51,6 +60,10 @@ export async function listUsers(
       SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
       WHERE ur.user_id = u.id AND r.name = $${params.length}
     )`;
+  }
+  if (filters?.status) {
+    params.push(filters.status);
+    where += ` AND u.status = $${params.length}`;
   }
   params.push(limit, offset);
 

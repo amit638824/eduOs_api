@@ -499,11 +499,7 @@ router.get(
   examController.getAnalytics,
 );
 
-router.get(
-  '/analytics/dashboard',
-  requirePermission('analytics', 'read'),
-  examController.getAdminDashboard,
-);
+router.get('/analytics/dashboard', examController.getAdminDashboard);
 
 router.get(
   '/analytics/tests/:testId',

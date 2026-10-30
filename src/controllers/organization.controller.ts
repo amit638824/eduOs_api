@@ -80,7 +80,12 @@ export async function listOrganizations(
 ): Promise<void> {
   try {
     const isSuperAdmin = req.user!.roles.includes('super_admin');
-    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
+    const { page, limit, search, isActive } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      search?: string;
+      isActive?: string | boolean;
+    };
 
     if (!isSuperAdmin) {
       const orgId = req.user!.organizationId;
@@ -94,7 +99,13 @@ export async function listOrganizations(
       return;
     }
 
-    const result = await orgService.listOrganizations(page, limit);
+    const activeFilter =
+      isActive === true || isActive === 'true'
+        ? true
+        : isActive === false || isActive === 'false'
+          ? false
+          : undefined;
+    const result = await orgService.listOrganizations(page, limit, search, activeFilter);
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);

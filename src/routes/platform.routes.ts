@@ -20,6 +20,8 @@ import {
   verifyRazorpayPaymentSchema,
   upsertSettingSchema,
   listUsersQuerySchema,
+  listPaymentsQuerySchema,
+  listAuditLogsQuerySchema,
   updateBranchSchema,
 } from '../validators/schemas.js';
 import * as platformController from '../controllers/platform.controller.js';
@@ -176,7 +178,7 @@ router.post('/notifications/read-all', platformController.markAllNotificationsRe
 
 // Payments
 router.get('/payments/config', platformController.getPaymentConfig);
-router.get('/payments', validate(paginationSchema, 'query'), platformController.listPayments);
+router.get('/payments', validate(listPaymentsQuerySchema, 'query'), platformController.listPayments);
 router.get('/payments/wallet', platformController.getWallet);
 router.post(
   '/payments/create-order',
@@ -224,7 +226,7 @@ router.delete(
 // Audit & activity
 router.get(
   '/audit-logs',
-  validate(paginationSchema, 'query'),
+  validate(listAuditLogsQuerySchema, 'query'),
   requireRoles('org_admin', 'super_admin'),
   platformController.listAuditLogs,
 );

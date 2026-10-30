@@ -7,6 +7,7 @@ import {
   updateOrganizationSchema,
   createBranchSchema,
   paginationSchema,
+  listOrganizationsQuerySchema,
   uuidParamSchema,
 } from '../validators/schemas.js';
 import * as orgController from '../controllers/organization.controller.js';
@@ -27,7 +28,7 @@ router.post(
 router.get(
   '/',
   requirePermission('organization', 'read'),
-  validate(paginationSchema, 'query'),
+  validate(listOrganizationsQuerySchema, 'query'),
   orgController.listOrganizations,
 );
 

@@ -40,9 +40,13 @@ async function orgContext(req: Request) {
 export async function listDepartments(req: Request, res: Response, next: NextFunction) {
   try {
     const { branchId } = vParams(req) as { branchId: string };
-    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
+    const { page, limit, search } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      search?: string;
+    };
     const { orgId } = await orgContext(req);
-    const result = await deptService.listDepartments(branchId, page, limit, orgId);
+    const result = await deptService.listDepartments(branchId, page, limit, orgId, search);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -128,13 +132,14 @@ export async function deleteAcademicSession(req: Request, res: Response, next: N
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId } = await orgContext(req);
-    const { page, limit, role, search } = vQuery(req) as unknown as {
+    const { page, limit, role, search, status } = vQuery(req) as unknown as {
       page: number;
       limit: number;
       role?: string;
       search?: string;
+      status?: string;
     };
-    const result = await adminUserService.listUsers(orgId, page, limit, { role, search });
+    const result = await adminUserService.listUsers(orgId, page, limit, { role, search, status });
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -251,9 +256,8 @@ export async function updateUserStatus(req: Request, res: Response, next: NextFu
 
 export async function listNotifications(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
     const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const result = await notificationService.listNotifications(userId, page, limit);
+    const result = await notificationService.listNotifications(req.user!.id, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
@@ -272,8 +276,7 @@ export async function createNotification(req: Request, res: Response, next: Next
 export async function markNotificationRead(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = vParams(req) as { id: string };
-    const { userId } = await orgContext(req);
-    const result = await notificationService.markNotificationRead(userId, id);
+    const result = await notificationService.markNotificationRead(req.user!.id, id);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -282,8 +285,7 @@ export async function markNotificationRead(req: Request, res: Response, next: Ne
 
 export async function markAllNotificationsRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
-    const result = await notificationService.markAllNotificationsRead(userId);
+    const result = await notificationService.markAllNotificationsRead(req.user!.id);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -292,8 +294,7 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
 
 export async function getUnreadCount(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
-    const result = await notificationService.getUnreadCount(userId);
+    const result = await notificationService.getUnreadCount(req.user!.id);
     res.json({ success: true, data: result });
   } catch (e) {
     next(e);
@@ -303,7 +304,12 @@ export async function getUnreadCount(req: Request, res: Response, next: NextFunc
 export async function listPayments(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId, userId } = await orgContext(req);
-    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
+    const { page, limit, search, status } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      search?: string;
+      status?: string;
+    };
     const isAdmin = req.user!.roles.some((r) =>
       ['org_admin', 'super_admin'].includes(r),
     );
@@ -312,6 +318,7 @@ export async function listPayments(req: Request, res: Response, next: NextFuncti
       page,
       limit,
       isAdmin ? undefined : userId,
+      { search, status },
     );
     res.json({ success: true, ...result });
   } catch (e) {
@@ -431,13 +438,19 @@ export async function deleteSetting(req: Request, res: Response, next: NextFunct
 export async function listAuditLogs(req: Request, res: Response, next: NextFunction) {
   try {
     const { orgId, isSuperAdmin, requesterOrgId } = await orgContext(req);
-    const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
+    const { page, limit, search, action } = vQuery(req) as unknown as {
+      page: number;
+      limit: number;
+      search?: string;
+      action?: string;
+    };
     const result = await auditService.listAuditLogs(
       orgId,
       page,
       limit,
       isSuperAdmin,
       requesterOrgId,
+      { search, action },
     );
     res.json({ success: true, ...result });
   } catch (e) {
@@ -447,9 +460,8 @@ export async function listAuditLogs(req: Request, res: Response, next: NextFunct
 
 export async function listActivityLogs(req: Request, res: Response, next: NextFunction) {
   try {
-    const { userId } = await orgContext(req);
     const { page, limit } = vQuery(req) as unknown as { page: number; limit: number };
-    const result = await auditService.listActivityLogs(userId, page, limit);
+    const result = await auditService.listActivityLogs(req.user!.id, page, limit);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);

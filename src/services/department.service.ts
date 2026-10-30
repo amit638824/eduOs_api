@@ -9,21 +9,30 @@ export async function listDepartments(
   page: number,
   limit: number,
   selectedOrgId: string,
+  search?: string,
 ) {
   const branch = await getBranchById(branchId);
   assertSameOrg(branch.organization_id as string, selectedOrgId);
 
   const offset = (page - 1) * limit;
+  const params: unknown[] = [branchId];
+  let where = 'branch_id = $1 AND deleted_at IS NULL';
+  if (search?.trim()) {
+    params.push(`%${search.trim()}%`);
+    where += ` AND (name ILIKE $${params.length} OR CAST(code AS CHAR) ILIKE $${params.length})`;
+  }
+  params.push(limit, offset);
+
   const [data, count] = await Promise.all([
     query(
       `SELECT id, branch_id, name, code, is_active, created_at
-       FROM departments WHERE branch_id = $1 AND deleted_at IS NULL
-       ORDER BY name LIMIT $2 OFFSET $3`,
-      [branchId, limit, offset],
+       FROM departments WHERE ${where}
+       ORDER BY name LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
     ),
     query(
-      `SELECT COUNT(*)::int AS total FROM departments WHERE branch_id = $1 AND deleted_at IS NULL`,
-      [branchId],
+      `SELECT COUNT(*)::int AS total FROM departments WHERE ${where}`,
+      params.slice(0, -2),
     ),
   ]);
   const total = count.rows[0].total as number;

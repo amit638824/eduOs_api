@@ -471,8 +471,23 @@ export async function listCertificatesForOrg(
   organizationId: string,
   page: number,
   limit: number,
+  search?: string,
 ) {
   const offset = (page - 1) * limit;
+  const params: unknown[] = [organizationId];
+  let where = 'c.organization_id = $1';
+  if (search?.trim()) {
+    params.push(`%${search.trim()}%`);
+    where += ` AND (
+      c.certificate_no ILIKE $${params.length}
+      OR t.title ILIKE $${params.length}
+      OR u.first_name ILIKE $${params.length}
+      OR u.last_name ILIKE $${params.length}
+      OR u.email ILIKE $${params.length}
+      OR s.admission_no ILIKE $${params.length}
+    )`;
+  }
+  params.push(limit, offset);
 
   const [data, count] = await Promise.all([
     query<CertificateRow>(
@@ -502,18 +517,22 @@ export async function listCertificatesForOrg(
        JOIN organizations o ON o.id = c.organization_id
        JOIN students s ON s.id = c.student_id
        JOIN users u ON u.id = s.user_id
-       WHERE c.organization_id = $1
+       WHERE ${where}
        ORDER BY c.issued_at DESC
-       LIMIT $2
-       OFFSET $3`,
-      [organizationId, limit, offset],
+       LIMIT $${params.length - 1}
+       OFFSET $${params.length}`,
+      params,
     ),
 
     query<{ total: number }>(
       `SELECT COUNT(*) AS total
-       FROM certificates
-       WHERE organization_id = $1`,
-      [organizationId],
+       FROM certificates c
+       JOIN results r ON r.id = c.result_id
+       JOIN tests t ON t.id = r.test_id
+       JOIN students s ON s.id = c.student_id
+       JOIN users u ON u.id = s.user_id
+       WHERE ${where}`,
+      params.slice(0, -2),
     ),
   ]);
 
