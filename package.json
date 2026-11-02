@@ -8,7 +8,8 @@
     "build": "tsc && node -e \"const fs=require('fs');const p=require('path');const s=p.join('src','assets','email');const d=p.join('dist','assets','email');fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s))fs.copyFileSync(p.join(s,f),p.join(d,f));\"",
     "migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/utils/orgMemberStatus.test.ts"
   },
   "engines": {
     "node": ">=20"

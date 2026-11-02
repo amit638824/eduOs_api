@@ -25,6 +25,7 @@ import {
 } from '../utils/proctoring.js';
 
 import * as notificationService from './notification.service.js';
+import { logActivity, logAudit } from '../utils/auditLogger.js';
 
 function optionContent(
   raw: unknown,
@@ -1270,6 +1271,45 @@ export async function submitAttempt(
         '[SUBMIT] Notification failed:',
         error,
       );
+    }
+
+    try {
+      const actor = await query<{ user_id: string; organization_id: string | null }>(
+        `SELECT s.user_id, u.organization_id
+         FROM students s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.id = $1`,
+        [studentId],
+      );
+      const actorId = actor.rows[0]?.user_id;
+      if (actorId) {
+        const title = (
+          await query<{ title: string }>(`SELECT title FROM tests WHERE id = $1`, [
+            transactionResult.testId,
+          ])
+        ).rows[0]?.title;
+        const activity = autoSubmit ? 'Exam auto-submitted' : 'Exam submitted';
+        await logActivity(actorId, activity, {
+          testId: transactionResult.testId,
+          attemptId,
+          title,
+          percentage: finalResult.percentage,
+        });
+        await logAudit({
+          organizationId: actor.rows[0]?.organization_id ?? null,
+          userId: actorId,
+          action: autoSubmit ? 'auto_submit' : 'submit',
+          resource: 'test_attempt',
+          resourceId: attemptId,
+          newValues: {
+            testId: transactionResult.testId,
+            title,
+            percentage: finalResult.percentage,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('[SUBMIT] Activity log failed:', error);
     }
 
     let certificate = null;

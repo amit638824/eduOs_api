@@ -3,6 +3,9 @@ import { ConflictError, NotFoundError, ForbiddenError } from '../utils/errors.js
 import { PaginatedResult } from '../types/express.js';
 import { generateTempPassword, hashPassword } from '../utils/security.js';
 import { asJsonObject } from '../utils/json.js';
+import { orgMemberStatusSync } from '../utils/orgMemberStatus.js';
+
+export { orgMemberStatusSync } from '../utils/orgMemberStatus.js';
 
 export interface CreateOrganizationInput {
   name: string;
@@ -233,21 +236,8 @@ export async function updateOrganization(
 
   const updated = result.rows[0];
 
-  // Sync org users when Super Admin toggles approval / suspend
-  if (input.isActive === true) {
-    await query(
-      `UPDATE users SET status = 'active', updated_at = NOW()
-       WHERE organization_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
-      [id],
-    );
-  } else if (input.isActive === false) {
-    await query(
-      `UPDATE users SET status = 'suspended', updated_at = NOW()
-       WHERE organization_id = $1
-         AND status IN ('active', 'pending')
-         AND deleted_at IS NULL`,
-      [id],
-    );
+  if (input.isActive === true || input.isActive === false) {
+    await syncOrganizationMembers(id, input.isActive);
   }
 
   return updated;
@@ -293,7 +283,19 @@ export async function getOrganizationNotifyEmails(organizationId: string): Promi
   return Array.from(emails);
 }
 
-/** Approve organization access — activate org + pending users */
+async function syncOrganizationMembers(organizationId: string, isActive: boolean) {
+  const sync = orgMemberStatusSync(isActive);
+  const statusPlaceholders = sync.from.map((_, index) => `$${index + 3}`).join(', ');
+  await query(
+    `UPDATE users SET status = $2, updated_at = NOW()
+     WHERE organization_id = $1
+       AND deleted_at IS NULL
+       AND status IN (${statusPlaceholders})`,
+    [organizationId, sync.to, ...sync.from],
+  );
+}
+
+/** Approve organization access — activate org and restore its members */
 export async function verifyOrganization(id: string) {
   const org = await getOrganizationById(id);
   const settings = {
@@ -312,11 +314,7 @@ export async function verifyOrganization(id: string) {
     [id, settings],
   );
 
-  await query(
-    `UPDATE users SET status = 'active', updated_at = NOW()
-     WHERE organization_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
-    [id],
-  );
+  await syncOrganizationMembers(id, true);
 
   return result.rows[0];
 }

@@ -12,6 +12,7 @@ import {
 import { ConflictError, UnauthorizedError, NotFoundError } from '../utils/errors.js';
 import { env } from '../config/env.js';
 import { sendWelcomeEmail } from './email.service.js';
+import { logActivity, logAudit } from '../utils/auditLogger.js';
 
 interface DbUser {
   id: string;
@@ -234,8 +235,29 @@ export async function loginUser(
   }
 
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+  await recordLoginActivity(user.id, user.organization_id, ipAddress);
 
   return buildAuthResponse(user, deviceInfo, ipAddress);
+}
+
+async function recordLoginActivity(
+  userId: string,
+  organizationId: string | null,
+  ipAddress?: string,
+) {
+  try {
+    await logActivity(userId, 'Signed in', { organizationId }, ipAddress);
+    await logAudit({
+      organizationId,
+      userId,
+      action: 'login',
+      resource: 'session',
+      resourceId: userId,
+      ipAddress,
+    });
+  } catch (error) {
+    console.error('[auth] activity log failed:', error);
+  }
 }
 
 export async function completeMfaLogin(
@@ -273,6 +295,7 @@ export async function completeMfaLogin(
     tokenHash,
   ]);
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+  await recordLoginActivity(user.id, user.organization_id, ipAddress);
 
   return buildAuthResponse(user, deviceInfo, ipAddress);
 }
