@@ -1,36 +1,49 @@
 import 'dotenv/config';
+import { str, num, bool, warnMissing, normalizeOrigin, buildFrontendUrl } from '../helpers/envHelper.js';
 
-/** Read string env with fallback — app won't crash if missing */
-function str(key: string | readonly string[], fallback = ''): string {
-  if (Array.isArray(key)) {
-    for (const k of key) {
-      const val = process.env[k]?.trim();
-      if (val) return val;
-    }
-    return fallback;
-  }
-  const v = process.env[key as string]; return v !== undefined ? v.trim() : fallback;
-}
+/**
+ * Live vs Local toggle
+ * Set IS_LIVE=true in .env to connect to Live Database & live settings.
+ * Set IS_LIVE=false in .env to connect to Local Database & localhost settings.
+ */
+export const isLive = bool(['IS_LIVE', 'LIVE', 'DB_LIVE'], true);
 
-/** Read number env with fallback */
-function num(key: string | readonly string[], fallback: number): number {
-  const keys = Array.isArray(key) ? key : [key];
-  for (const k of keys) {
-    const raw = process.env[k];
-    if (raw?.trim()) {
-      const parsed = Number(raw);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return fallback;
-}
+const DB_HOST = isLive
+  ? str(['DB_LIVE_HOST', 'DB_HOST'], 's12078.use1.stableserver.net')
+  : str(['DB_LOCAL_HOST', 'DB_HOST'], 'localhost');
 
-/** Read boolean env (`true` / `1`) with fallback */
-function bool(key: string, fallback: boolean): boolean {
-  const raw = process.env[key];
-  if (!raw?.trim()) return fallback;
-  return raw === 'true' || raw === '1';
-}
+const DB_PORT = isLive
+  ? num(['DB_LIVE_PORT', 'DB_PORT'], 3306)
+  : num(['DB_LOCAL_PORT', 'DB_PORT'], 3306);
+
+const DB_USERNAME = isLive
+  ? str(['DB_LIVE_USER', 'DB_LIVE_USERNAME', 'DB_USER', 'DB_USERNAME'], 'techwagger_mindsprint_user')
+  : str(['DB_LOCAL_USER', 'DB_LOCAL_USERNAME', 'DB_USER', 'DB_USERNAME'], 'root');
+
+const DB_PASSWORD = isLive
+  ? str(['DB_LIVE_PASSWORD', 'DB_PASSWORD'], 'xFf}8=ltevWS9HPj')
+  : str(['DB_LOCAL_PASSWORD', 'DB_PASSWORD'], '');
+
+const DB_DATABASE = isLive
+  ? str(['DB_LIVE_NAME', 'DB_LIVE_DATABASE', 'DB_NAME', 'DB_DATABASE'], 'techwagger_mindsprint_db')
+  : str(['DB_LOCAL_NAME', 'DB_LOCAL_DATABASE', 'DB_NAME', 'DB_DATABASE'], 'edutech');
+
+const DB_SSL = isLive
+  ? bool(['DB_LIVE_SSL', 'DB_SSL'], false)
+  : bool(['DB_LOCAL_SSL', 'DB_SSL'], false);
+
+const DB_SSL_REJECT_UNAUTHORIZED = isLive
+  ? bool(['DB_LIVE_SSL_REJECT_UNAUTHORIZED', 'DB_SSL_REJECT_UNAUTHORIZED'], false)
+  : bool(['DB_LOCAL_SSL_REJECT_UNAUTHORIZED', 'DB_SSL_REJECT_UNAUTHORIZED'], false);
+
+// Keep process.env in sync for any tool or script directly reading process.env
+process.env.DB_HOST = DB_HOST;
+process.env.DB_PORT = String(DB_PORT);
+process.env.DB_USER = DB_USERNAME;
+process.env.DB_USERNAME = DB_USERNAME;
+process.env.DB_PASSWORD = DB_PASSWORD;
+process.env.DB_DATABASE = DB_DATABASE;
+process.env.DB_NAME = DB_DATABASE;
 
 const nodeEnvRaw = process.env.NODE_ENV?.trim();
 const NODE_ENV =
@@ -55,7 +68,10 @@ const DEFAULT_CORS_ORIGINS = [...PRODUCTION_CORS_ORIGINS, LOCAL_CORS_ORIGINS].jo
 
 const FRONTEND_URL_LOCAL = str('FRONTEND_URL_LOCAL', 'http://localhost:5173').replace(/\/$/, '');
 const FRONTEND_URL_PROD = str('FRONTEND_URL_PROD', PRODUCTION_FRONTEND_URL).replace(/\/$/, '');
-const FRONTEND_URL = (NODE_ENV === 'development' ? str('FRONTEND_URL_LOCAL', 'http://localhost:5173') : str('FRONTEND_URL', FRONTEND_URL_PROD)).replace(/\/$/, '');
+const FRONTEND_URL = (isLive
+  ? str('FRONTEND_URL_PROD', str('FRONTEND_URL', PRODUCTION_FRONTEND_URL))
+  : str('FRONTEND_URL_LOCAL', str('FRONTEND_URL', 'http://localhost:5173'))
+).replace(/\/$/, '');
 
 /** Absolute asset URLs for email clients (cannot load localhost images) */
 const EMAIL_ASSET_BASE = str('EMAIL_ASSET_BASE', FRONTEND_URL_PROD).replace(/\/$/, '');
@@ -69,17 +85,18 @@ const DEV_JWT_REFRESH =
 export const env = {
   NODE_ENV,
   PORT: num('PORT', 3000),
+  IS_LIVE: isLive,
 
   DB_TYPE: 'mysql' as const,
-  DB_HOST: str('DB_HOST', 'localhost'),
-  DB_PORT: num('DB_PORT', 3306),
-  DB_USERNAME: str(['DB_USERNAME', 'DB_USER'], 'root'),
-  DB_USER: str(['DB_USER', 'DB_USERNAME'], 'root'),
-  DB_PASSWORD: str('DB_PASSWORD', ''),
-  DB_DATABASE: str(['DB_DATABASE', 'DB_NAME'], 'edutech'),
-  DB_NAME: str(['DB_NAME', 'DB_DATABASE'], 'edutech'),
-  DB_SSL: bool('DB_SSL', false),
-  DB_SSL_REJECT_UNAUTHORIZED: bool('DB_SSL_REJECT_UNAUTHORIZED', false),
+  DB_HOST,
+  DB_PORT,
+  DB_USERNAME,
+  DB_USER: DB_USERNAME,
+  DB_PASSWORD,
+  DB_DATABASE,
+  DB_NAME: DB_DATABASE,
+  DB_SSL,
+  DB_SSL_REJECT_UNAUTHORIZED,
   DB_POOL_MAX: num('DB_POOL_MAX', 20),
   DB_IDLE_TIMEOUT_MS: num('DB_IDLE_TIMEOUT_MS', 30_000),
   DB_CONNECTION_TIMEOUT_MS: num('DB_CONNECTION_TIMEOUT_MS', 5_000),
@@ -134,23 +151,7 @@ export const env = {
 
 /** Build an absolute frontend URL (strips duplicate slashes). */
 export function frontendUrl(path = ''): string {
-  const base = env.FRONTEND_URL.replace(/\/$/, '');
-  if (!path) return base;
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
-}
-
-function warnMissing(keys: (string | readonly string[])[], level: 'warn' | 'error' = 'warn') {
-  const missing = keys.filter((k) => {
-    if (Array.isArray(k)) {
-      return !k.some((subKey) => process.env[subKey]?.trim());
-    }
-    return !process.env[k as string]?.trim();
-  });
-  if (missing.length === 0) return;
-  const missingLabels = missing.map((k) => (Array.isArray(k) ? k.join('/') : k));
-  const msg = `[env] Missing ${level === 'error' ? 'required' : 'recommended'} variables: ${missingLabels.join(', ')}`;
-  if (level === 'error') console.error(msg);
-  else console.warn(msg);
+  return buildFrontendUrl(env.FRONTEND_URL, path);
 }
 
 if (NODE_ENV === 'production') {
@@ -164,18 +165,9 @@ if (NODE_ENV === 'production') {
   warnMissing(['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET']);
 }
 
-
 export const isProduction = env.NODE_ENV === 'production';
 
-export function normalizeOrigin(value: string): string {
-  const trimmed = value.trim().replace(/\/$/, '');
-  if (!trimmed) return '';
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return trimmed;
-  }
-}
+export { normalizeOrigin };
 
 /** Allowed browser origins — production URLs always included (even without .env on server). */
 export const corsOrigins = Array.from(

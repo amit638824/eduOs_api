@@ -60,6 +60,7 @@ async function bootstrap() {
   const app = createApp();
   const server = app.listen(env.PORT, () => {
     console.log(`Mindsprint API running on port ${env.PORT} [${env.NODE_ENV}]`);
+    console.log(`Database target: [${env.IS_LIVE ? 'LIVE' : 'LOCAL'}] Host: ${env.DB_HOST}, Database: ${env.DB_DATABASE}`);
   });
   initRealtime(server);
 
