@@ -36,7 +36,7 @@ const DB_SSL_REJECT_UNAUTHORIZED = isLive
   ? bool(['DB_LIVE_SSL_REJECT_UNAUTHORIZED', 'DB_SSL_REJECT_UNAUTHORIZED'], false)
   : bool(['DB_LOCAL_SSL_REJECT_UNAUTHORIZED', 'DB_SSL_REJECT_UNAUTHORIZED'], false);
 
-// Keep process.env in sync for any tool or script directly reading process.env
+// Keep process.env in sync for any tool or script directly reading process.env..
 process.env.DB_HOST = DB_HOST;
 process.env.DB_PORT = String(DB_PORT);
 process.env.DB_USER = DB_USERNAME;
