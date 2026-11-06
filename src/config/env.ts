@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { str, num, bool, warnMissing, normalizeOrigin, buildFrontendUrl } from '../helpers/envHelper.js';
 
 /**
- * Live vs Local toggle
+ * Live vs Local toggle.
  * Set IS_LIVE=true in .env to connect to Live Database & live settings.
  * Set IS_LIVE=false in .env to connect to Local Database & localhost settings.
  */
