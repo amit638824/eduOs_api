@@ -347,32 +347,43 @@ export function organizationCredentialsMailTemplate({
   adminName,
   loginEmail,
   temporaryPassword,
+  resetToken,
+  setPasswordUrl,
   isApproved,
   loginUrl = `${UI_BASE_URL}/login`,
 }: {
   orgName: string;
   adminName?: string;
   loginEmail: string;
-  temporaryPassword: string;
+  temporaryPassword?: string;
+  resetToken?: string;
+  setPasswordUrl?: string;
   isApproved: boolean;
   loginUrl?: string;
 }): string {
+  const actionUrl = setPasswordUrl || loginUrl;
+  const hasResetLink = Boolean(setPasswordUrl || resetToken);
+
+  const details = [
+    { label: 'Organization', value: orgName },
+    { label: 'Login email', value: loginEmail },
+    ...(temporaryPassword && !hasResetLink
+      ? [{ label: 'Temporary password', value: temporaryPassword }]
+      : []),
+    { label: 'Account status', value: isApproved ? 'Active' : 'Pending approval' },
+  ];
+
   return wrapEmailBody(`
-    ${heading(isApproved ? 'Your organization can sign in' : 'Your organization is awaiting approval')}
+    ${heading(isApproved ? 'Welcome to ' + env.APP_NAME : 'Your organization is awaiting approval')}
     ${textRow(`Dear ${escapeHtml(adminName || 'Organization Admin')},`)}
     ${textRow(
       isApproved
-        ? `<strong>${escapeHtml(orgName)}</strong> is active on <strong>${escapeHtml(env.APP_NAME)}</strong>. Use the details below to sign in and set up exams, faculty, and students.`
-        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it. You can sign in with these details after approval.`,
+        ? `Your organization account for <strong>${escapeHtml(orgName)}</strong> is active on <strong>${escapeHtml(env.APP_NAME)}</strong>. Click the button below to set your password and access your administrator portal.`
+        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it.`,
     )}
-    ${detailTable([
-      { label: 'Organization', value: orgName },
-      { label: 'Login email', value: loginEmail },
-      { label: 'Temporary password', value: temporaryPassword },
-      { label: 'Account status', value: isApproved ? 'Active' : 'Pending approval' },
-    ])}
-    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
-    ${textRow(`Change this password after your first sign-in. Do not forward this email.`)}
+    ${detailTable(details)}
+    ${actionRow(dashboardCta(actionUrl, hasResetLink ? 'Click Here to Set Password' : 'Sign in'))}
+    ${textRow(hasResetLink ? 'Once your password is set, you will be taken directly to your profile setup. This link is valid for 48 hours.' : 'Change this password after your first sign-in. Do not forward this email.')}
     ${signoff()}
   `);
 }
@@ -438,6 +449,8 @@ export function userCredentialsMailTemplate({
   loginEmail,
   enrollmentNo,
   temporaryPassword,
+  resetToken,
+  setPasswordUrl,
   loginUrl = `${UI_BASE_URL}/login`,
   orgName,
 }: {
@@ -445,36 +458,46 @@ export function userCredentialsMailTemplate({
   roleLabel: string;
   loginEmail: string;
   enrollmentNo?: string | null;
-  temporaryPassword: string;
+  temporaryPassword?: string;
+  resetToken?: string;
+  setPasswordUrl?: string;
   loginUrl?: string;
   orgName?: string;
 }): string {
+  const actionUrl = setPasswordUrl || loginUrl;
+  const hasResetLink = Boolean(setPasswordUrl || resetToken);
+
   const roleIntro =
     roleLabel === 'Student'
-      ? 'You can view assigned exams, attempt them, and check your results after you sign in.'
+      ? 'Click the button below to set your password and access your exams and courses.'
       : roleLabel === 'Faculty'
-        ? 'You can create tests, review attempts, and manage your classes after you sign in.'
-        : 'You can manage your organization from the dashboard after you sign in.';
+        ? 'Click the button below to set your password and access your faculty portal.'
+        : 'Click the button below to set your password and access your dashboard.';
+
+  const details = [
+    { label: 'Role', value: roleLabel },
+    ...(orgName ? [{ label: 'Organization', value: orgName }] : []),
+    { label: 'Login email', value: loginEmail },
+    ...(enrollmentNo ? [{ label: 'Enrollment number', value: enrollmentNo }] : []),
+    ...(temporaryPassword && !hasResetLink
+      ? [{ label: 'Password', value: temporaryPassword }]
+      : []),
+  ];
+
   return wrapEmailBody(`
-    ${heading(`Your ${roleLabel.toLowerCase()} account is ready`)}
+    ${heading(hasResetLink ? `Welcome to ${env.APP_NAME}` : `Your ${roleLabel.toLowerCase()} account is ready`)}
     ${textRow(`Dear ${escapeHtml(firstName)},`)}
     ${textRow(
-      `An administrator created your <strong>${escapeHtml(roleLabel)}</strong> account on <strong>${escapeHtml(env.APP_NAME)}</strong>${
+      `Your <strong>${escapeHtml(roleLabel)}</strong> account has been created on <strong>${escapeHtml(env.APP_NAME)}</strong>${
         orgName ? ` for <strong>${escapeHtml(orgName)}</strong>` : ''
       }. ${roleIntro}`,
     )}
-    ${detailTable([
-      { label: 'Role', value: roleLabel },
-      { label: 'Organization', value: orgName ?? '' },
-      { label: 'Login email', value: loginEmail },
-      { label: 'Enrollment number', value: enrollmentNo ?? '' },
-      { label: 'Password', value: temporaryPassword },
-    ])}
-    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
+    ${detailTable(details)}
+    ${actionRow(dashboardCta(actionUrl, hasResetLink ? 'Click Here to Set Password' : 'Sign in'))}
     ${textRow(
-      enrollmentNo
-        ? `Sign in with your email or enrollment number and the password above. Change the password after your first sign-in. If you forget it later, use Forgot password on the sign-in page.`
-        : `Sign in with your email and the password above. Change the password after your first sign-in. If you forget it later, use Forgot password on the sign-in page.`,
+      hasResetLink
+        ? `Once your password is set, you will be taken directly to your profile setup. This link is valid for 48 hours.`
+        : `Sign in with your email and the password above. Change the password after your first sign-in.`
     )}
     ${signoff()}
   `);

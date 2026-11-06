@@ -77,6 +77,7 @@ async function buildAuthResponse(
   deviceInfo: Record<string, unknown>,
   ipAddress?: string,
   client?: DbClient,
+  isFirstLogin?: boolean,
 ): Promise<{ user: Record<string, unknown>; tokens: AuthTokens }> {
   const roles = await getUserRoles(user.id, client);
   const accessToken = signAccessToken({
@@ -99,8 +100,11 @@ async function buildAuthResponse(
       email: user.email,
       firstName: user.first_name,
       lastName: user.last_name,
+      phone: (user as any).phone || null,
       organizationId: user.organization_id,
       status: user.status,
+      lastLoginAt: (user as any).last_login_at || null,
+      isFirstLogin: typeof isFirstLogin === "boolean" ? isFirstLogin : !((user as any).last_login_at),
       roles,
     }),
     tokens: {
@@ -196,13 +200,13 @@ export async function loginUser(
   const isEmail = trimmed.includes('@');
 
   const result = isEmail
-    ? await query<DbUser & { mfa_enabled: boolean }>(
-        `SELECT id, email, password_hash, first_name, last_name, organization_id, status, mfa_enabled
+    ? await query<DbUser & { mfa_enabled: boolean; phone: string | null; last_login_at: Date | null }>(
+        `SELECT id, email, password_hash, first_name, last_name, phone, organization_id, status, mfa_enabled, last_login_at
          FROM users WHERE email = $1 AND deleted_at IS NULL`,
         [trimmed.toLowerCase()],
       )
-    : await query<DbUser & { mfa_enabled: boolean }>(
-        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.organization_id, u.status, u.mfa_enabled
+    : await query<DbUser & { mfa_enabled: boolean; phone: string | null; last_login_at: Date | null }>(
+        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.phone, u.organization_id, u.status, u.mfa_enabled, u.last_login_at
          FROM users u
          JOIN students s ON s.user_id = u.id
          WHERE LOWER(s.admission_no) = LOWER($1) AND u.deleted_at IS NULL`,
@@ -234,10 +238,11 @@ export async function loginUser(
     return { requiresMfa: true, mfaToken, userId: user.id };
   }
 
+  const isFirstLogin = !(user as any).last_login_at;
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
   await recordLoginActivity(user.id, user.organization_id, ipAddress);
 
-  return buildAuthResponse(user, deviceInfo, ipAddress);
+  return buildAuthResponse(user, deviceInfo, ipAddress, undefined, isFirstLogin);
 }
 
 async function recordLoginActivity(
@@ -275,8 +280,8 @@ export async function completeMfaLogin(
   );
   if (!otpRow.rows[0]) throw new UnauthorizedError('Invalid or expired MFA session');
 
-  const userResult = await query<DbUser>(
-    `SELECT id, email, password_hash, first_name, last_name, organization_id, status
+  const userResult = await query<DbUser & { phone: string | null; last_login_at: Date | null }>(
+    `SELECT id, email, password_hash, first_name, last_name, phone, organization_id, status, last_login_at
      FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
     [otpRow.rows[0].user_id],
   );
@@ -294,10 +299,11 @@ export async function completeMfaLogin(
   await query(`UPDATE otp_codes SET used_at = NOW() WHERE code_hash = $1 AND purpose = 'mfa_login'`, [
     tokenHash,
   ]);
+  const isFirstLogin = !(user as any).last_login_at;
   await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
   await recordLoginActivity(user.id, user.organization_id, ipAddress);
 
-  return buildAuthResponse(user, deviceInfo, ipAddress);
+  return buildAuthResponse(user, deviceInfo, ipAddress, undefined, isFirstLogin);
 }
 
 export async function refreshAccessToken(
@@ -326,8 +332,8 @@ export async function refreshAccessToken(
 
   await query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1', [stored.id]);
 
-  const userResult = await query<DbUser>(
-    `SELECT id, email, password_hash, first_name, last_name, organization_id, status
+  const userResult = await query<DbUser & { phone: string | null; last_login_at: Date | null }>(
+    `SELECT id, email, password_hash, first_name, last_name, phone, organization_id, status, last_login_at
      FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
     [stored.user_id],
   );
@@ -337,7 +343,7 @@ export async function refreshAccessToken(
     throw new UnauthorizedError('User not found');
   }
 
-  return buildAuthResponse(user, deviceInfo, ipAddress);
+  return buildAuthResponse(user, deviceInfo, ipAddress, undefined, false);
 }
 
 export async function logoutUser(refreshToken: string): Promise<void> {

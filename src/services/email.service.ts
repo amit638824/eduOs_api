@@ -168,7 +168,8 @@ export async function sendUserCredentialsEmail(input: {
   role: 'student' | 'teacher' | 'org_admin' | 'staff';
   loginEmail: string;
   enrollmentNo?: string | null;
-  temporaryPassword: string;
+  temporaryPassword?: string;
+  resetToken?: string;
   orgName?: string;
 }): Promise<boolean> {
   const roleLabel =
@@ -179,25 +180,34 @@ export async function sendUserCredentialsEmail(input: {
         : input.role === 'staff'
           ? 'Organization Staff'
           : 'Organization Admin';
-  const loginUrl = frontendUrl('/login');
+  const setPasswordUrl = input.resetToken
+    ? frontendUrl(`/reset-password?token=${encodeURIComponent(input.resetToken)}&email=${encodeURIComponent(input.loginEmail)}`)
+    : frontendUrl('/login');
+  const hasReset = Boolean(input.resetToken);
+
   return sendEmail({
     to: input.to,
-    subject: `Your ${roleLabel.toLowerCase()} account on ${env.APP_NAME}`,
+    subject: hasReset
+      ? `Welcome to ${env.APP_NAME} — Set up your ${roleLabel.toLowerCase()} account`
+      : `Your ${roleLabel.toLowerCase()} account on ${env.APP_NAME}`,
     html: userCredentialsMailTemplate({
       firstName: input.firstName,
       roleLabel,
       loginEmail: input.loginEmail,
       enrollmentNo: input.enrollmentNo,
       temporaryPassword: input.temporaryPassword,
-      loginUrl,
+      resetToken: input.resetToken,
+      setPasswordUrl,
       orgName: input.orgName,
     }),
     text: [
+      `Welcome to ${env.APP_NAME}!`,
       `Your ${roleLabel} account is ready.`,
       `Login email: ${input.loginEmail}`,
       input.enrollmentNo ? `Enrollment no: ${input.enrollmentNo}` : null,
-      `Password: ${input.temporaryPassword}`,
-      `Login: ${loginUrl}`,
+      hasReset
+        ? `Set your password here: ${setPasswordUrl}`
+        : `Temporary password: ${input.temporaryPassword}\nLogin: ${setPasswordUrl}`,
     ]
       .filter(Boolean)
       .join('\n'),
@@ -267,32 +277,42 @@ export async function notifyOrganizationOfSuperAdminAction(input: {
   });
 }
 
-/** Send login email + temporary password when a new organization is created */
+/** Send welcome email with direct password setup link when a new organization is created */
 export async function sendOrganizationCredentialsEmail(input: {
   to: string;
   orgName: string;
   adminName?: string;
   loginEmail: string;
-  temporaryPassword: string;
+  temporaryPassword?: string;
+  resetToken?: string;
   isApproved: boolean;
 }): Promise<boolean> {
-  const loginUrl = frontendUrl('/login');
+  const setPasswordUrl = input.resetToken
+    ? frontendUrl(`/reset-password?token=${encodeURIComponent(input.resetToken)}&email=${encodeURIComponent(input.loginEmail)}`)
+    : frontendUrl('/login');
+  const hasReset = Boolean(input.resetToken);
+
   return sendEmail({
     to: input.to,
-    subject: `Your ${env.APP_NAME} organization login details`,
+    subject: hasReset
+      ? `Welcome to ${env.APP_NAME} — Set up your ${input.orgName} account`
+      : `Your ${env.APP_NAME} organization login details`,
     html: organizationCredentialsMailTemplate({
       orgName: input.orgName,
       adminName: input.adminName,
       loginEmail: input.loginEmail,
       temporaryPassword: input.temporaryPassword,
+      resetToken: input.resetToken,
+      setPasswordUrl,
       isApproved: input.isApproved,
-      loginUrl,
     }),
     text: [
+      `Welcome to ${env.APP_NAME}!`,
       `Organization: ${input.orgName}`,
       `Login email: ${input.loginEmail}`,
-      `Temporary password: ${input.temporaryPassword}`,
-      `Login: ${loginUrl}`,
+      hasReset
+        ? `Set your password here: ${setPasswordUrl}`
+        : `Temporary password: ${input.temporaryPassword}\nLogin: ${setPasswordUrl}`,
       input.isApproved
         ? 'Your account is active.'
         : 'Pending Super Admin approval before login.',

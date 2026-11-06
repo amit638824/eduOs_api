@@ -40,6 +40,7 @@ export async function createOrganization(
         adminName: `${admin.firstName} ${admin.lastName}`.trim(),
         loginEmail: admin.email,
         temporaryPassword: admin.temporaryPassword,
+        resetToken: admin.resetToken,
         isApproved: Boolean(org.is_active),
       }).catch((err) => console.error('[email] org credentials failed:', err));
     } else if (req.user!.roles.includes('super_admin')) {

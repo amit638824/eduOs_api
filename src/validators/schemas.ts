@@ -313,7 +313,7 @@ export const updateAcademicSessionSchema = createAcademicSessionSchema.partial()
 
 export const createAdminUserSchema = z.object({
   email: z.string().email().max(255).transform((v) => v.toLowerCase()),
-  password: passwordSchema,
+  password: passwordSchema.optional(),
   firstName: z.string().min(1).max(100).trim(),
   lastName: z.string().min(1).max(100).trim(),
   phone: z.string().max(20).optional(),
