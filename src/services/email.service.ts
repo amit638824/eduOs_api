@@ -3,6 +3,7 @@ import {
   contactFormMailTemplate,
   emailVerificationOtpMailTemplate,
   examAssignmentMailTemplate,
+  extractFirstName,
   forgetPasswordMailTemplate,
   organizationActionMailTemplate,
   organizationCredentialsMailTemplate,
@@ -65,13 +66,18 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
   return true;
 }
 
-export async function sendPasswordResetEmail(email: string, resetToken: string): Promise<boolean> {
+export async function sendPasswordResetEmail(
+  email: string,
+  resetToken: string,
+  firstName?: string,
+): Promise<boolean> {
   const resetUrl = frontendUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
+  const cleanFirst = extractFirstName(firstName, 'User');
   return sendEmail({
     to: email,
     subject: `Reset your ${env.APP_NAME} password`,
-    html: forgetPasswordMailTemplate({ hyperText: resetUrl }),
-    text: `Reset your password: ${resetUrl}\nExpires in 1 hour.`,
+    html: forgetPasswordMailTemplate({ hyperText: resetUrl, firstName }),
+    text: `Dear ${cleanFirst},\n\nReset your password: ${resetUrl}\nExpires in 1 hour.`,
   });
 }
 
@@ -81,20 +87,27 @@ export async function sendAdminPasswordResetEmail(
   resetToken: string,
 ): Promise<boolean> {
   const resetLink = frontendUrl(`/reset-password?token=${encodeURIComponent(resetToken)}`);
+  const cleanFirst = extractFirstName(userName, 'User');
   return sendEmail({
     to: email,
     subject: `Set a new password for your ${env.APP_NAME} account`,
     html: adminPasswordResetMailTemplate({ userName, resetLink }),
-    text: `Your password was reset by an administrator. Set a new password: ${resetLink}`,
+    text: `Dear ${cleanFirst},\n\nYour password was reset by an administrator. Set a new password: ${resetLink}`,
   });
 }
 
-export async function sendOtpEmail(email: string, code: string, purpose: string): Promise<boolean> {
+export async function sendOtpEmail(
+  email: string,
+  code: string,
+  purpose: string,
+  firstName?: string,
+): Promise<boolean> {
+  const cleanFirst = extractFirstName(firstName, 'User');
   return sendEmail({
     to: email,
     subject: `Your ${env.APP_NAME} verification code`,
-    html: emailVerificationOtpMailTemplate({ hyperText: code, purpose }),
-    text: `Your OTP for ${purpose} is ${code}. Valid for 10 minutes.`,
+    html: emailVerificationOtpMailTemplate({ hyperText: code, purpose, firstName }),
+    text: `Dear ${cleanFirst},\n\nYour OTP for ${purpose} is ${code}. Valid for 10 minutes.`,
   });
 }
 
@@ -201,6 +214,8 @@ export async function sendUserCredentialsEmail(input: {
       orgName: input.orgName,
     }),
     text: [
+      `Dear ${extractFirstName(input.firstName, 'User')},`,
+      '',
       `Welcome to ${env.APP_NAME}!`,
       `Your ${roleLabel} account is ready.`,
       `Login email: ${input.loginEmail}`,
@@ -307,6 +322,8 @@ export async function sendOrganizationCredentialsEmail(input: {
       isApproved: input.isApproved,
     }),
     text: [
+      `Dear ${extractFirstName(input.adminName, 'Organization Admin')},`,
+      '',
       `Welcome to ${env.APP_NAME}!`,
       `Organization: ${input.orgName}`,
       `Login email: ${input.loginEmail}`,

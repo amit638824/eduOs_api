@@ -8,8 +8,8 @@ import { isSmtpConfigured } from '../config/env.js';
 import * as notificationService from './notification.service.js';
 
 export async function requestPasswordReset(email: string) {
-  const user = await query<{ id: string; email: string }>(
-    `SELECT id, email FROM users WHERE email = $1 AND deleted_at IS NULL`,
+  const user = await query<{ id: string; email: string; first_name?: string }>(
+    `SELECT id, email, first_name FROM users WHERE email = $1 AND deleted_at IS NULL`,
     [email.toLowerCase()],
   );
   if (!user.rows[0]) {
@@ -31,7 +31,7 @@ export async function requestPasswordReset(email: string) {
 
   let emailSent = false;
   if (isSmtpConfigured) {
-    emailSent = await sendPasswordResetEmail(user.rows[0].email, rawToken);
+    emailSent = await sendPasswordResetEmail(user.rows[0].email, rawToken, user.rows[0].first_name);
   }
 
   const response: Record<string, unknown> = {
