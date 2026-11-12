@@ -26,6 +26,7 @@ import {
 
 import * as notificationService from './notification.service.js';
 import { logActivity, logAudit } from '../utils/auditLogger.js';
+import { activateDueScheduledTests } from './test.service.js';
 
 function optionContent(
   raw: unknown,
@@ -342,13 +343,10 @@ export async function startAttempt(
   studentId: string,
   organizationId: string,
 ) {
-  const { activateDueScheduledTests } =
-    await import('./test.service.js');
-
   // Activate tests whose test-level scheduled time has arrived.
-  await activateDueScheduledTests(
-    organizationId,
-  );
+  if (typeof activateDueScheduledTests === 'function') {
+    await activateDueScheduledTests(organizationId);
+  }
 
   const test = await query(
     `SELECT
