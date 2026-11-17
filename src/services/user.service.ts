@@ -8,7 +8,7 @@ export async function updateProfile(
   const result = await query(
     `UPDATE users SET
        first_name = COALESCE($2, first_name),
-       last_name = COALESCE($3, last_name),
+       last_name = CASE WHEN $3 IS NOT NULL THEN $3 WHEN last_name = '.' THEN '' ELSE last_name END,
        phone = COALESCE($4, phone),
        avatar_url = COALESCE($5, avatar_url),
        updated_at = NOW()
