@@ -356,3 +356,4 @@ export async function checkDatabaseConnection(): Promise<boolean> {
 export async function closeDatabase(): Promise<void> {
   await pool.end();
 }
+

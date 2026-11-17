@@ -45,23 +45,14 @@ function wrapEmailBody(innerRowsHtml: string): string {
       <td align="center" style="padding:32px 12px;">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:600px;max-width:600px;background-color:#ffffff;border:1px solid #e5e7eb;">
           <tr>
-            <td align="center" style="padding:28px 32px 18px 32px;background-color:#ffffff;">
-              <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;">
-                <img src="${LOGO_URL}" width="200" alt="TechWagger" style="display:block;border:0;outline:none;text-decoration:none;width:200px;max-width:200px;height:auto;">
+            <td align="left" style="padding:32px 32px 20px 32px;background-color:#ffffff;">
+              <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;display:inline-block;">
+                <img src="${LOGO_URL}" width="115" alt="TechWagger" style="display:block;border:0;outline:none;text-decoration:none;width:115px;max-width:115px;height:auto;">
               </a>
             </td>
           </tr>
           <tr>
-            <td style="padding:0 32px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
-                <tr>
-                  <td style="height:3px;line-height:3px;font-size:0;background-color:${TEAL};">&nbsp;</td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px 32px 8px 32px;font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
+            <td style="padding:10px 32px 12px 32px;font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                 ${innerRowsHtml}
               </table>
