@@ -104,8 +104,9 @@ function translatePgSyntax(sql: string): string {
   let s = sql;
   s = s.replace(/NOW\(\)\s*\+\s*INTERVAL\s+'(\d+)\s+(\w+)'/gi, (_m, n: string, unit: string) => {
     const mapped = MYSQL_INTERVAL_UNIT[unit.toLowerCase()] ?? unit.toUpperCase();
-    return `DATE_ADD(NOW(), INTERVAL ${n} ${mapped})`;
+    return `DATE_ADD(UTC_TIMESTAMP(), INTERVAL ${n} ${mapped})`;
   });
+  s = s.replace(/\bNOW\(\)/gi, 'UTC_TIMESTAMP()');
   s = s.replace(/\bILIKE\b/gi, 'LIKE');
   s = s.replace(/::numeric\(\d+\s*,\s*\d+\)/gi, '');
   s = s.replace(
