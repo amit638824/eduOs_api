@@ -639,12 +639,13 @@ export async function deleteTest(
 export async function activateDueScheduledTests(
   organizationId?: string,
 ) {
-  const params: unknown[] = [];
+  const nowIso = new Date().toISOString();
+  const params: unknown[] = [nowIso];
   let orgFilter = '';
 
   if (organizationId) {
     params.push(organizationId);
-    orgFilter = ` AND organization_id = $1`;
+    orgFilter = ` AND organization_id = $2`;
   }
 
   const activated = await query<{
@@ -653,12 +654,12 @@ export async function activateDueScheduledTests(
   }>(
     `UPDATE tests
      SET status = 'live',
-         published_at = COALESCE(published_at, NOW()),
-         updated_at = NOW()
+         published_at = COALESCE(published_at, $1),
+         updated_at = $1
      WHERE status = 'scheduled'
        AND archived_at IS NULL
        AND scheduled_start IS NOT NULL
-       AND scheduled_start <= NOW()
+       AND scheduled_start <= $1
        ${orgFilter}
      RETURNING id, title`,
     params,
@@ -726,7 +727,7 @@ export async function publishTest(
     }
 
     if (
-      scheduledEnd &&
+      !scheduledEnd ||
       Number.isNaN(scheduledEnd.getTime())
     ) {
       throw new ConflictError(
@@ -735,7 +736,6 @@ export async function publishTest(
     }
 
     if (
-      scheduledEnd &&
       scheduledStart &&
       scheduledEnd.getTime() <= scheduledStart.getTime()
     ) {

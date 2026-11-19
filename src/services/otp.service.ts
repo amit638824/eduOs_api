@@ -9,8 +9,8 @@ function generateOtpCode(): string {
 }
 
 export async function sendOtp(userId: string, purpose: string) {
-  const user = await query<{ email: string }>(
-    `SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL`,
+  const user = await query<{ email: string; first_name?: string }>(
+    `SELECT email, first_name FROM users WHERE id = $1 AND deleted_at IS NULL`,
     [userId],
   );
 
@@ -24,7 +24,7 @@ export async function sendOtp(userId: string, purpose: string) {
 
   let emailSent = false;
   if (isSmtpConfigured && user.rows[0]?.email) {
-    emailSent = await sendOtpEmail(user.rows[0].email, code, purpose);
+    emailSent = await sendOtpEmail(user.rows[0].email, code, purpose, user.rows[0].first_name);
   }
 
   const response: Record<string, unknown> = { message: 'OTP sent', expiresInMinutes: 10, emailSent };

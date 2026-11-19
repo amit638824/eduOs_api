@@ -19,6 +19,17 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Extracts only the first name from a full name string, falling back to a default label.
+ * Guarantees that only the first name is used (e.g. "Rahul Sharma" -> "Rahul").
+ */
+export function extractFirstName(name?: string | null, fallback = 'User'): string {
+  if (!name) return fallback;
+  const trimmed = name.trim();
+  if (!trimmed) return fallback;
+  return trimmed.split(/\s+/)[0] || fallback;
+}
+
 function wrapEmailBody(innerRowsHtml: string): string {
   const appName = escapeHtml(env.APP_NAME);
   return `<!DOCTYPE html>
@@ -34,23 +45,14 @@ function wrapEmailBody(innerRowsHtml: string): string {
       <td align="center" style="padding:32px 12px;">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:600px;max-width:600px;background-color:#ffffff;border:1px solid #e5e7eb;">
           <tr>
-            <td align="center" style="padding:28px 32px 18px 32px;background-color:#ffffff;">
-              <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;">
-                <img src="${LOGO_URL}" width="200" alt="TechWagger" style="display:block;border:0;outline:none;text-decoration:none;width:200px;max-width:200px;height:auto;">
+            <td align="left" style="padding:32px 32px 20px 32px;background-color:#ffffff;">
+              <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;display:inline-block;">
+                <img src="${LOGO_URL}" width="115" alt="TechWagger" style="display:block;border:0;outline:none;text-decoration:none;width:115px;max-width:115px;height:auto;">
               </a>
             </td>
           </tr>
           <tr>
-            <td style="padding:0 32px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
-                <tr>
-                  <td style="height:3px;line-height:3px;font-size:0;background-color:${TEAL};">&nbsp;</td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px 32px 8px 32px;font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
+            <td style="padding:10px 32px 12px 32px;font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                 ${innerRowsHtml}
               </table>
@@ -156,14 +158,17 @@ function codeBlock(code: string): string {
 /** Forgot / reset password email */
 export function forgetPasswordMailTemplate({
   hyperText,
+  firstName,
 }: {
   subject?: string;
   text?: string;
   hyperText: string;
+  firstName?: string;
 }): string {
+  const first = extractFirstName(firstName, 'User');
   return wrapEmailBody(`
     ${heading('Reset your password')}
-    ${textRow(`Dear User,`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Choose a new password with the button below. This link expires in 1 hour.`)}
     ${actionRow(ctaButton(hyperText, 'Reset password', TEAL))}
     ${textRow(`If you did not ask for a reset, ignore this email. Your current password will not change.`)}
@@ -175,16 +180,19 @@ export function forgetPasswordMailTemplate({
 export function emailVerificationOtpMailTemplate({
   hyperText,
   purpose = 'verification',
+  firstName,
 }: {
   subject?: string;
   text?: string;
   hyperText: string;
   purpose?: string;
+  firstName?: string;
 }): string {
+  const first = extractFirstName(firstName, 'User');
   const purposeLabel = purpose.replace(/[_-]+/g, ' ').trim() || 'verification';
   return wrapEmailBody(`
     ${heading('Your verification code')}
-    ${textRow(`Dear User,`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`Use this code to complete <strong>${escapeHtml(purposeLabel)}</strong> on <strong>${escapeHtml(env.APP_NAME)}</strong>. It expires in 10 minutes.`)}
     ${codeBlock(hyperText)}
     ${textRow(`Do not share this code. ${escapeHtml(env.APP_NAME)} will never ask for it by phone or message. If you did not request it, ignore this email.`)}
@@ -227,9 +235,10 @@ export function adminPasswordResetMailTemplate({
   userName?: string;
   resetLink: string;
 }): string {
+  const first = extractFirstName(userName, 'User');
   return wrapEmailBody(`
     ${heading('Set a new password')}
-    ${textRow(`Dear ${escapeHtml(userName || 'User')},`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`An administrator reset the password on your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Set a new password before you sign in again. This link expires in 1 hour.`)}
     ${actionRow(ctaButton(resetLink, 'Set a new password', TEAL))}
     ${textRow(`If you did not expect this, contact your organization administrator before using the link.`)}
@@ -245,9 +254,10 @@ export function welcomeMailTemplate({
   firstName: string;
   loginUrl?: string;
 }): string {
+  const first = extractFirstName(firstName, 'User');
   return wrapEmailBody(`
     ${heading(`Welcome to ${env.APP_NAME}`)}
-    ${textRow(`Dear ${escapeHtml(firstName)},`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`Your account is ready. Sign in to view assigned exams, check results, and update your profile.`)}
     ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
     ${textRow(`Keep your login details private. If you need a new password later, use Forgot password on the sign-in page.`)}
@@ -273,9 +283,10 @@ export function examAssignmentMailTemplate({
   status?: string | null;
   dashboardUrl?: string;
 }): string {
+  const first = extractFirstName(studentName, 'Student');
   return wrapEmailBody(`
     ${heading('An exam has been assigned to you')}
-    ${textRow(`Dear ${escapeHtml(studentName)},`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`Your institute assigned an exam on <strong>${escapeHtml(env.APP_NAME)}</strong>. Sign in before the scheduled time and read the instructions on the exam page.`)}
     ${detailTable([
       { label: 'Exam', value: examName },
@@ -326,9 +337,10 @@ export function documentRejectedMailTemplate({
   supportEmail?: string;
   actionUrl?: string;
 }): string {
+  const first = extractFirstName(userName, 'User');
   return wrapEmailBody(`
     ${heading('Document not accepted')}
-    ${textRow(`Dear ${escapeHtml(userName || 'User')},`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`We reviewed <strong>${escapeHtml(documentName)}</strong> and could not accept it. Upload a new copy that meets the checks below.`)}
     ${detailTable([
       { label: 'Document', value: documentName },
@@ -347,32 +359,44 @@ export function organizationCredentialsMailTemplate({
   adminName,
   loginEmail,
   temporaryPassword,
+  resetToken,
+  setPasswordUrl,
   isApproved,
   loginUrl = `${UI_BASE_URL}/login`,
 }: {
   orgName: string;
   adminName?: string;
   loginEmail: string;
-  temporaryPassword: string;
+  temporaryPassword?: string;
+  resetToken?: string;
+  setPasswordUrl?: string;
   isApproved: boolean;
   loginUrl?: string;
 }): string {
+  const actionUrl = setPasswordUrl || loginUrl;
+  const hasResetLink = Boolean(setPasswordUrl || resetToken);
+  const first = extractFirstName(adminName, 'Organization Admin');
+
+  const details = [
+    { label: 'Organization', value: orgName },
+    { label: 'Login email', value: loginEmail },
+    ...(temporaryPassword && !hasResetLink
+      ? [{ label: 'Temporary password', value: temporaryPassword }]
+      : []),
+    { label: 'Account status', value: isApproved ? 'Active' : 'Pending approval' },
+  ];
+
   return wrapEmailBody(`
-    ${heading(isApproved ? 'Your organization can sign in' : 'Your organization is awaiting approval')}
-    ${textRow(`Dear ${escapeHtml(adminName || 'Organization Admin')},`)}
+    ${heading(isApproved ? 'Welcome to ' + env.APP_NAME : 'Your organization is awaiting approval')}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(
       isApproved
-        ? `<strong>${escapeHtml(orgName)}</strong> is active on <strong>${escapeHtml(env.APP_NAME)}</strong>. Use the details below to sign in and set up exams, faculty, and students.`
-        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it. You can sign in with these details after approval.`,
+        ? `Your organization account for <strong>${escapeHtml(orgName)}</strong> is active on <strong>${escapeHtml(env.APP_NAME)}</strong>. Click the button below to set your password and access your administrator portal.`
+        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it.`,
     )}
-    ${detailTable([
-      { label: 'Organization', value: orgName },
-      { label: 'Login email', value: loginEmail },
-      { label: 'Temporary password', value: temporaryPassword },
-      { label: 'Account status', value: isApproved ? 'Active' : 'Pending approval' },
-    ])}
-    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
-    ${textRow(`Change this password after your first sign-in. Do not forward this email.`)}
+    ${detailTable(details)}
+    ${actionRow(dashboardCta(actionUrl, hasResetLink ? 'Click Here to Set Password' : 'Sign in'))}
+    ${textRow(hasResetLink ? 'Once your password is set, you will be taken directly to your profile setup. This link is valid for 48 hours.' : 'Change this password after your first sign-in. Do not forward this email.')}
     ${signoff()}
   `);
 }
@@ -438,6 +462,8 @@ export function userCredentialsMailTemplate({
   loginEmail,
   enrollmentNo,
   temporaryPassword,
+  resetToken,
+  setPasswordUrl,
   loginUrl = `${UI_BASE_URL}/login`,
   orgName,
 }: {
@@ -445,36 +471,47 @@ export function userCredentialsMailTemplate({
   roleLabel: string;
   loginEmail: string;
   enrollmentNo?: string | null;
-  temporaryPassword: string;
+  temporaryPassword?: string;
+  resetToken?: string;
+  setPasswordUrl?: string;
   loginUrl?: string;
   orgName?: string;
 }): string {
+  const actionUrl = setPasswordUrl || loginUrl;
+  const hasResetLink = Boolean(setPasswordUrl || resetToken);
+  const first = extractFirstName(firstName, 'User');
+
   const roleIntro =
     roleLabel === 'Student'
-      ? 'You can view assigned exams, attempt them, and check your results after you sign in.'
+      ? 'Click the button below to set your password and access your exams and courses.'
       : roleLabel === 'Faculty'
-        ? 'You can create tests, review attempts, and manage your classes after you sign in.'
-        : 'You can manage your organization from the dashboard after you sign in.';
+        ? 'Click the button below to set your password and access your faculty portal.'
+        : 'Click the button below to set your password and access your dashboard.';
+
+  const details = [
+    { label: 'Role', value: roleLabel },
+    ...(orgName ? [{ label: 'Organization', value: orgName }] : []),
+    { label: 'Login email', value: loginEmail },
+    ...(enrollmentNo ? [{ label: 'Enrollment number', value: enrollmentNo }] : []),
+    ...(temporaryPassword && !hasResetLink
+      ? [{ label: 'Password', value: temporaryPassword }]
+      : []),
+  ];
+
   return wrapEmailBody(`
-    ${heading(`Your ${roleLabel.toLowerCase()} account is ready`)}
-    ${textRow(`Dear ${escapeHtml(firstName)},`)}
+    ${heading(hasResetLink ? `Welcome to ${env.APP_NAME}` : `Your ${roleLabel.toLowerCase()} account is ready`)}
+    ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(
-      `An administrator created your <strong>${escapeHtml(roleLabel)}</strong> account on <strong>${escapeHtml(env.APP_NAME)}</strong>${
+      `Your <strong>${escapeHtml(roleLabel)}</strong> account has been created on <strong>${escapeHtml(env.APP_NAME)}</strong>${
         orgName ? ` for <strong>${escapeHtml(orgName)}</strong>` : ''
       }. ${roleIntro}`,
     )}
-    ${detailTable([
-      { label: 'Role', value: roleLabel },
-      { label: 'Organization', value: orgName ?? '' },
-      { label: 'Login email', value: loginEmail },
-      { label: 'Enrollment number', value: enrollmentNo ?? '' },
-      { label: 'Password', value: temporaryPassword },
-    ])}
-    ${actionRow(dashboardCta(loginUrl, 'Sign in'))}
+    ${detailTable(details)}
+    ${actionRow(dashboardCta(actionUrl, hasResetLink ? 'Click Here to Set Password' : 'Sign in'))}
     ${textRow(
-      enrollmentNo
-        ? `Sign in with your email or enrollment number and the password above. Change the password after your first sign-in. If you forget it later, use Forgot password on the sign-in page.`
-        : `Sign in with your email and the password above. Change the password after your first sign-in. If you forget it later, use Forgot password on the sign-in page.`,
+      hasResetLink
+        ? `Once your password is set, you will be taken directly to your profile setup. This link is valid for 48 hours.`
+        : `Sign in with your email and the password above. Change the password after your first sign-in.`
     )}
     ${signoff()}
   `);

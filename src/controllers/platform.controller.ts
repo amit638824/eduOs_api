@@ -166,7 +166,8 @@ export async function createUser(req: Request, res: Response, next: NextFunction
       role: req.body.role,
       loginEmail: req.body.email,
       enrollmentNo: user.enrollment_no as string | null | undefined,
-      temporaryPassword: req.body.password,
+      temporaryPassword: (user as any).temporaryPassword || req.body.password,
+      resetToken: (user as any).resetToken,
       orgName,
     }).catch((err) => console.error('[email] user credentials failed:', err));
 

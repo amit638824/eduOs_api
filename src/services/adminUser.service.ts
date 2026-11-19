@@ -1,5 +1,5 @@
 import { query, withTransaction, type DbRow } from '../config/database.js';
-import { hashPassword } from '../utils/security.js';
+import { hashPassword, generateTempPassword, generateSecureToken, hashToken } from '../utils/security.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { assertEnrollmentNoAvailable, resolveEnrollmentNo, suggestEnrollmentNo } from './enrollment.service.js';
@@ -133,7 +133,7 @@ export async function createUser(
   organizationId: string,
   input: {
     email: string;
-    password: string;
+    password?: string;
     firstName: string;
     lastName: string;
     phone?: string;
@@ -148,7 +148,8 @@ export async function createUser(
   ]);
   if (existing.rowCount) throw new ConflictError('Email already registered');
 
-  const passwordHash = await hashPassword(input.password);
+  const rawPassword = input.password?.trim() || generateTempPassword();
+  const passwordHash = await hashPassword(rawPassword);
   return withTransaction(async (client) => {
     const user = await client.query<DbRow>(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone, organization_id, branch_id, status)
@@ -189,7 +190,24 @@ export async function createUser(
         [user.rows[0].id, organizationId, input.branchId ?? null],
       );
     }
-    return { ...user.rows[0], id: user.rows[0].id, roles: [input.role], enrollment_no: enrollmentNo };
+
+    // Generate secure 48-hour password reset token for the new user
+    const rawResetToken = generateSecureToken(32);
+    const tokenHash = hashToken(rawResetToken);
+    await client.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '48 hours')`,
+      [user.rows[0].id, tokenHash],
+    );
+
+    return {
+      ...user.rows[0],
+      id: user.rows[0].id,
+      roles: [input.role],
+      enrollment_no: enrollmentNo,
+      temporaryPassword: rawPassword,
+      resetToken: rawResetToken,
+    };
   }).then((created) => {
     if (input.role === 'student') {
       void notificationService.notifyUserInApp(

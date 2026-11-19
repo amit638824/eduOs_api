@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pool, query, ensureDatabaseExists, closeDatabase } from '../config/database.js';
+import { env } from '../config/env.js';
 
 const migrationsDir = path.resolve(process.cwd(), 'database/migrations');
 
@@ -31,6 +32,7 @@ async function migrate() {
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
+  console.log(`\nStarting migration on [${env.IS_LIVE ? 'LIVE' : 'LOCAL'}] database: ${env.DB_DATABASE} (${env.DB_HOST})`);
   console.log(`Applying ${files.length} migration files:`);
   for (const file of files) console.log(`  file  ${file}`);
 
@@ -85,7 +87,7 @@ migrate().catch((err) => {
   const code = (err as { code?: string }).code;
   if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENOTFOUND') {
     console.error(
-      `\nCould not connect to MySQL at ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '3306'}.`,
+      `\nCould not connect to MySQL at ${env.DB_HOST}:${env.DB_PORT} [Target: ${env.IS_LIVE ? 'LIVE' : 'LOCAL'}, Database: ${env.DB_DATABASE}].`,
       '\nThis one command applies every file in database/migrations. Allow this PC in the database remote-access list, then run: npm run migrate',
     );
   }

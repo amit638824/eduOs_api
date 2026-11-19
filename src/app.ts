@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
-import { env, corsOrigins, isProduction, normalizeOrigin } from './config/env.js';
+import { env, isProduction } from './config/env.js';
 import { globalRateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import routes from './routes/index.js';
@@ -14,37 +14,13 @@ export function createApp() {
   app.set('trust proxy', env.TRUST_PROXY);
   app.disable('x-powered-by');
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: isProduction,
-      crossOriginEmbedderPolicy: isProduction,
-    }),
+  app.use(helmet({
+    contentSecurityPolicy: isProduction,
+    crossOriginEmbedderPolicy: isProduction,
+  }),
   );
 
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Postman / server-to-server — no Origin header
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
-        const normalized = normalizeOrigin(origin);
-        if (corsOrigins.includes(normalized) || corsOrigins.includes(origin)) {
-          callback(null, true);
-          return;
-        }
-        if (!isProduction) {
-          console.warn(`[cors] Blocked origin: ${origin} (allowed: ${corsOrigins.join(', ')})`);
-        }
-        callback(new Error('Not allowed by CORS'));
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id'],
-    }),
-  );
-
+  app.use(cors());
   app.use(compression());
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: false, limit: '2mb' }));
@@ -60,4 +36,4 @@ export function createApp() {
 }
 
 
-// git test.
+// git test..

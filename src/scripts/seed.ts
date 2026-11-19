@@ -7,6 +7,7 @@
  */
 import 'dotenv/config';
 import { query, withTransaction, closeDatabase, ensureDatabaseExists } from '../config/database.js';
+import { env } from '../config/env.js';
 import { hashPassword } from '../utils/security.js';
 
 const SEED_PASSWORD = 'Test@12345';
@@ -270,7 +271,14 @@ ${'='.repeat(52)}
 }
 
 async function main(): Promise<void> {
-  console.log('\n[EduTech] Minimal seed — super admin only\n');
+  console.log(`\n[EduTech] Minimal seed on [${env.IS_LIVE ? 'LIVE' : 'LOCAL'}] database: ${env.DB_DATABASE} (${env.DB_HOST})\n`);
+
+  if (env.IS_LIVE && process.env.CONFIRM_LIVE_SEED !== 'true') {
+    console.warn('⚠️  CAUTION: IS_LIVE=true! Running seed will WIPE and reset the LIVE database.');
+    console.warn('If you really intend to wipe the live database, run: CONFIRM_LIVE_SEED=true npm run seed\n');
+    process.exit(1);
+  }
+
   await ensureDatabaseExists();
 
   console.log('STEP 1/3 — Delete all existing records');

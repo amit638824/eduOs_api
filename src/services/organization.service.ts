@@ -1,8 +1,11 @@
 import { query, withTransaction } from '../config/database.js';
 import { ConflictError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
-import { generateTempPassword, hashPassword } from '../utils/security.js';
+import { generateTempPassword, hashPassword, generateSecureToken, hashToken } from '../utils/security.js';
 import { asJsonObject } from '../utils/json.js';
+import { orgMemberStatusSync } from '../utils/orgMemberStatus.js';
+
+export { orgMemberStatusSync } from '../utils/orgMemberStatus.js';
 
 export interface CreateOrganizationInput {
   name: string;
@@ -31,7 +34,8 @@ export interface CreateOrganizationResult {
     email: string;
     firstName: string;
     lastName: string;
-    temporaryPassword: string;
+    temporaryPassword?: string;
+    resetToken?: string;
     status: string;
   };
 }
@@ -48,6 +52,19 @@ export async function createOrganization(
   }
 
   const contactEmail = input.contactEmail.toLowerCase().trim();
+  // Auto-clean orphaned users from previously deleted organizations so the email can be reused
+  await query(
+    `UPDATE users u
+     JOIN organizations o ON u.organization_id = o.id
+     SET u.deleted_at = NOW(),
+         u.status = 'inactive',
+         u.email = CONCAT(u.email, '-deleted-', LEFT(u.id, 8)),
+         u.updated_at = NOW()
+     WHERE o.deleted_at IS NOT NULL
+       AND u.email = $1
+       AND u.deleted_at IS NULL`,
+    [contactEmail],
+  );
   const emailTaken = await query('SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL', [
     contactEmail,
   ]);
@@ -58,7 +75,7 @@ export async function createOrganization(
   const isActive = input.isActive === true;
   const temporaryPassword = input.adminPassword?.trim() || generateTempPassword();
   const firstName = (input.adminFirstName?.trim() || 'Organization').slice(0, 100);
-  const lastName = (input.adminLastName?.trim() || 'Admin').slice(0, 100);
+  const lastName = (input.adminLastName?.trim() || '.').slice(0, 100);
   const userStatus = isActive ? 'active' : 'pending';
   const passwordHash = await hashPassword(temporaryPassword);
 
@@ -113,6 +130,15 @@ export async function createOrganization(
       role.rows[0].id,
     ]);
 
+    // Create a 48-hour password reset token for the new Org Admin
+    const rawResetToken = generateSecureToken(32);
+    const tokenHash = hashToken(rawResetToken);
+    await client.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '48 hours')`,
+      [user.rows[0].id, tokenHash],
+    );
+
     return {
       ...org,
       admin: {
@@ -121,6 +147,7 @@ export async function createOrganization(
         firstName: user.rows[0].first_name as string,
         lastName: user.rows[0].last_name as string,
         temporaryPassword,
+        resetToken: rawResetToken,
         status: user.rows[0].status as string,
       },
     };
@@ -233,21 +260,8 @@ export async function updateOrganization(
 
   const updated = result.rows[0];
 
-  // Sync org users when Super Admin toggles approval / suspend
-  if (input.isActive === true) {
-    await query(
-      `UPDATE users SET status = 'active', updated_at = NOW()
-       WHERE organization_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
-      [id],
-    );
-  } else if (input.isActive === false) {
-    await query(
-      `UPDATE users SET status = 'suspended', updated_at = NOW()
-       WHERE organization_id = $1
-         AND status IN ('active', 'pending')
-         AND deleted_at IS NULL`,
-      [id],
-    );
+  if (input.isActive === true || input.isActive === false) {
+    await syncOrganizationMembers(id, input.isActive);
   }
 
   return updated;
@@ -293,7 +307,19 @@ export async function getOrganizationNotifyEmails(organizationId: string): Promi
   return Array.from(emails);
 }
 
-/** Approve organization access — activate org + pending users */
+async function syncOrganizationMembers(organizationId: string, isActive: boolean) {
+  const sync = orgMemberStatusSync(isActive);
+  const statusPlaceholders = sync.from.map((_, index) => `$${index + 3}`).join(', ');
+  await query(
+    `UPDATE users SET status = $2, updated_at = NOW()
+     WHERE organization_id = $1
+       AND deleted_at IS NULL
+       AND status IN (${statusPlaceholders})`,
+    [organizationId, sync.to, ...sync.from],
+  );
+}
+
+/** Approve organization access — activate org and restore its members */
 export async function verifyOrganization(id: string) {
   const org = await getOrganizationById(id);
   const settings = {
@@ -312,11 +338,7 @@ export async function verifyOrganization(id: string) {
     [id, settings],
   );
 
-  await query(
-    `UPDATE users SET status = 'active', updated_at = NOW()
-     WHERE organization_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
-    [id],
-  );
+  await syncOrganizationMembers(id, true);
 
   return result.rows[0];
 }
@@ -330,6 +352,16 @@ export async function deleteOrganization(id: string) {
        slug = CONCAT(slug, '-deleted-', LEFT(id, 8)),
        updated_at = NOW()
      WHERE id = $1`,
+    [id],
+  );
+  // Soft-delete all users belonging to this deleted organization to release their emails
+  await query(
+    `UPDATE users SET
+       deleted_at = NOW(),
+       status = 'inactive',
+       email = CONCAT(email, '-deleted-', LEFT(id, 8)),
+       updated_at = NOW()
+     WHERE organization_id = $1 AND deleted_at IS NULL`,
     [id],
   );
   return { id, deleted: true };
