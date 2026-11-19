@@ -12,6 +12,7 @@ import {
   welcomeMailTemplate,
   type OrganizationActionType,
 } from '../templates/emailTemplates.js';
+import { emailLogoAttachment } from '../templates/logoAsset.js';
 import * as orgService from './organization.service.js';
 import { env, bccEmails, isSmtpConfigured, frontendUrl } from '../config/env.js';
 import nodemailer from 'nodemailer';
@@ -43,6 +44,7 @@ export interface SendEmailInput {
   subject: string;
   html: string;
   text?: string;
+  attachments?: any[];
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<boolean> {
@@ -61,6 +63,7 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
     subject: input.subject,
     html: input.html,
     text: input.text,
+    attachments: [emailLogoAttachment, ...(input.attachments || [])],
   });
 
   return true;
@@ -237,7 +240,7 @@ export async function sendContactFormEmail(input: {
   subject: string;
   to?: string;
 }): Promise<boolean> {
-  const to = input.to || env.SMTP_FROM || env.SMTP_USER;
+  const to = input.to || env.CONTACT_EMAIL || env.SMTP_FROM || env.SMTP_USER;
   if (!to) return false;
   return sendEmail({
     to,

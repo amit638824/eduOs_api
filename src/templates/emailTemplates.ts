@@ -1,8 +1,8 @@
 import { env } from '../config/env.js';
 
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
-/** Hosted TechWagger mark. Do not fall back to the old Super Computer logo. */
-const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/techwagger-logo.png';
+/** Hosted MindSprint mark. */
+const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/mindsprint-logo.png';
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
 const FONT = "Arial, Helvetica, sans-serif";
@@ -47,7 +47,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
           <tr>
             <td align="left" style="padding:32px 32px 20px 32px;background-color:#ffffff;">
               <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;display:inline-block;">
-                <img src="${LOGO_URL}" width="115" alt="TechWagger" style="display:block;border:0;outline:none;text-decoration:none;width:115px;max-width:115px;height:auto;">
+                <img src="cid:mindsprint-logo" width="180" alt="${appName}" style="display:block;border:0;outline:none;text-decoration:none;width:180px;max-width:180px;height:auto;">
               </a>
             </td>
           </tr>
@@ -64,7 +64,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
                 <tr>
                   <td style="border-top:1px solid #e5e7eb;padding-top:16px;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};" align="center">
                     ${appName}<br>
-                    &copy; ${CURRENT_YEAR} TechWagger. All rights reserved.
+                    &copy; ${CURRENT_YEAR} Mindsprint. Techwagger Solutions Pvt. Ltd. All rights reserved.
                   </td>
                 </tr>
               </table>
