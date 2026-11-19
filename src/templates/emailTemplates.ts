@@ -2,7 +2,7 @@ import { env } from '../config/env.js';
 
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
 /** Hosted MindSprint mark. */
-const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/mindsprint-logo.png';
+export const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/mindsprint-logo.png';
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
 const FONT = "Arial, Helvetica, sans-serif";

@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
+export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+export const PASSWORD_VALIDATION_MESSAGE =
+  'Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, one number, and one special character.';
+
 const passwordSchema = z
   .string()
-  .min(8, 'Password must be at least 8 characters.')
   .max(128, 'Password is too long.')
-  .regex(/[A-Z]/, 'Password must include at least one uppercase letter.')
-  .regex(/[a-z]/, 'Password must include at least one lowercase letter.')
-  .regex(/[0-9]/, 'Password must include at least one number.')
-  .regex(/[^A-Za-z0-9]/, 'Password must include at least one special character.');
+  .regex(PASSWORD_REGEX, PASSWORD_VALIDATION_MESSAGE);
 
 export const registerSchema = z.object({
   email: z.string().email().max(255).transform((v) => v.toLowerCase()),
