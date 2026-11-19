@@ -6,7 +6,7 @@ export const homepageContent = {
     description: 'Empower your institution and learners with AI-proctored online exams, comprehensive question banks, instant auto-evaluation, and verified digital certificates.',
     primaryCta: { label: 'Explore Mock Tests', href: '/exams' },
     secondaryCta: { label: 'Watch Demo', href: '#video' },
-    image: '/eduleb/img/home-img2.png',
+    image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80',
     trust: [
       { label: 'Trusted by', value: '50,000+ candidates' },
       { label: 'average rating', value: '4.9/5' },
@@ -49,7 +49,7 @@ export const homepageContent = {
     ],
   },
   about: {
-    image: '/eduleb/img/about1.png',
+    image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80',
     title: 'Enterprise-Grade Online Examination & Assessment Ecosystem',
     paragraphs: [
       'Mindsprint is a modern digital examination platform engineered for colleges, schools, coaching institutes, and corporate recruiters to conduct high-stakes assessments with total integrity.',
@@ -85,12 +85,12 @@ export const homepageContent = {
     title: 'Featured Online Mock Tests & Practice Examinations',
     cta: { label: 'View All Tests', href: '/exams' },
     items: [
-      { img: '/eduleb/img/course/1.png', tag: 'Govt IT', title: 'CCC (Course on Computer Concepts) Comprehensive Mock Exam', lessons: '100 Questions', duration: '90 Mins', price: 'Free Practice' },
-      { img: '/eduleb/img/course/2.png', tag: 'Hardware', title: 'PC Hardware & Network Engineering Certification Exam', lessons: '80 Questions', duration: '60 Mins', price: 'Free Practice' },
-      { img: '/eduleb/img/course/3.png', tag: 'Govt IT', title: 'O Level (M1-R5) Information Technology Tools Practice Paper', lessons: '100 Questions', duration: '120 Mins', price: 'Free Practice' },
-      { img: '/eduleb/img/course/4.png', tag: 'Software', title: 'Advanced Computer Applications & Office Automation Test', lessons: '60 Questions', duration: '45 Mins', price: 'Free Practice' },
-      { img: '/eduleb/img/course/5.png', tag: 'Coding', title: 'Python Programming & Problem Solving Skill Assessment', lessons: '50 Questions', duration: '60 Mins', price: '₹49.00' },
-      { img: '/eduleb/img/course/6.png', tag: 'Aptitude', title: 'Quantitative Aptitude & Logical Reasoning Mock Challenge', lessons: '75 Questions', duration: '75 Mins', price: 'Free Practice' },
+      { img: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80', tag: 'Govt IT', title: 'CCC (Course on Computer Concepts) Comprehensive Mock Exam', lessons: '100 Questions', duration: '90 Mins', price: 'Free Practice' },
+      { img: 'https://images.unsplash.com/photo-1588702547919-26089e690ecc?auto=format&fit=crop&w=600&q=80', tag: 'Hardware', title: 'PC Hardware & Network Engineering Certification Exam', lessons: '80 Questions', duration: '60 Mins', price: 'Free Practice' },
+      { img: 'https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?auto=format&fit=crop&w=600&q=80', tag: 'Govt IT', title: 'O Level (M1-R5) Information Technology Tools Practice Paper', lessons: '100 Questions', duration: '120 Mins', price: 'Free Practice' },
+      { img: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80', tag: 'Software', title: 'Advanced Computer Applications & Office Automation Test', lessons: '60 Questions', duration: '45 Mins', price: 'Free Practice' },
+      { img: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80', tag: 'Coding', title: 'Python Programming & Problem Solving Skill Assessment', lessons: '50 Questions', duration: '60 Mins', price: '₹49.00' },
+      { img: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=600&q=80', tag: 'Aptitude', title: 'Quantitative Aptitude & Logical Reasoning Mock Challenge', lessons: '75 Questions', duration: '75 Mins', price: 'Free Practice' },
     ],
   },
   partners: {
@@ -105,17 +105,17 @@ export const homepageContent = {
     ],
   },
   video: {
-    image: '/eduleb/img/bg/video.jpg',
+    image: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=1200&q=80',
     href: 'https://www.youtube.com/watch?v=RXv_uIN6e-Y',
   },
   instructors: {
     title: 'Our Examination Faculty & Assessment Experts',
     description: 'Our question papers and mock tests are designed, peer-reviewed, and verified by certified educators and industry leaders.',
     items: [
-      { img: '/eduleb/img/team/team1.jpg', name: 'Prof. Rajesh Sharma', role: 'Head of IT & Computer Examinations', courses: '45+ Tests', students: '12,500+ Assessed' },
-      { img: '/eduleb/img/team/team2.jpg', name: 'Dr. Priya Verma', role: 'Aptitude & Competitive Exam Specialist', courses: '60+ Tests', students: '18,200+ Assessed' },
-      { img: '/eduleb/img/team/team3.jpg', name: 'Er. Amit Srivastava', role: 'Software & Coding Assessment Lead', courses: '35+ Tests', students: '9,800+ Assessed' },
-      { img: '/eduleb/img/team/team4.jpg', name: 'Sunita Mishra', role: 'Govt IT & NIELIT Certification Mentor', courses: '50+ Tests', students: '15,000+ Assessed' },
+      { img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&h=600&q=80', name: 'Prof. Rajesh Sharma', role: 'Head of IT & Computer Examinations', courses: '45+ Tests', students: '12,500+ Assessed' },
+      { img: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&h=600&q=80', name: 'Dr. Priya Verma', role: 'Aptitude & Competitive Exam Specialist', courses: '60+ Tests', students: '18,200+ Assessed' },
+      { img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&h=600&q=80', name: 'Er. Amit Srivastava', role: 'Software & Coding Assessment Lead', courses: '35+ Tests', students: '9,800+ Assessed' },
+      { img: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=600&h=600&q=80', name: 'Sunita Mishra', role: 'Govt IT & NIELIT Certification Mentor', courses: '50+ Tests', students: '15,000+ Assessed' },
     ],
   },
   why: {
@@ -132,28 +132,28 @@ export const homepageContent = {
       'Multi-Branch & Role-Based Access for Educational Organizations',
     ],
     cta: { label: 'Start Online Test', href: '/exams' },
-    image: '/eduleb/img/about3.png',
+    image: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80',
     statValue: '250+',
     statLabel: 'Active Mock Tests',
   },
   testimonials: {
     title: 'What Students & Educators Say About Mindsprint',
-    image: '/eduleb/img/review.png',
+    image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80',
     items: [
-      { avatar: '/eduleb/img/testimonial/1.png', name: 'Aman Gupta', company: 'CCC Exam Candidate', text: 'Practicing on Mindsprint helped me clear my CCC certification on the first attempt! The mock test interface is identical to the real exam pattern and the instant scorecard highlighted my weak topics.' },
-      { avatar: '/eduleb/img/testimonial/2.png', name: 'Sneha Rastogi', company: 'Diploma Student', text: 'The timed assessments and detailed accuracy analysis boosted my confidence immensely. Receiving an authentic verified certificate after completing my course exam was seamless.' },
-      { avatar: '/eduleb/img/testimonial/3.png', name: 'Vikram Patel', company: 'IT Academy Instructor', text: 'Managing 500+ students and conducting batch-wise terminal examinations used to take weeks. With Mindsprint, test assignment, automated evaluation, and report generation take just minutes.' },
-      { avatar: '/eduleb/img/testimonial/4.png', name: 'Pooja Tiwari', company: 'Competitive Exam Aspirant', text: 'The question quality in quantitative aptitude and reasoning is top-notch. The sectional countdown timer and review flags made me exam-ready.' },
-      { avatar: '/eduleb/img/testimonial/5.png', name: 'Rohan Mehta', company: 'Python Certification Candidate', text: 'The coding test questions and instant answer explanations gave me real practical clarity. Highly recommended for every serious learner.' },
+      { avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&h=200&q=80', name: 'Aman Gupta', company: 'CCC Exam Candidate', text: 'Practicing on Mindsprint helped me clear my CCC certification on the first attempt! The mock test interface is identical to the real exam pattern and the instant scorecard highlighted my weak topics.' },
+      { avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&h=200&q=80', name: 'Sneha Rastogi', company: 'Diploma Student', text: 'The timed assessments and detailed accuracy analysis boosted my confidence immensely. Receiving an authentic verified certificate after completing my course exam was seamless.' },
+      { avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&h=200&q=80', name: 'Vikram Patel', company: 'IT Academy Instructor', text: 'Managing 500+ students and conducting batch-wise terminal examinations used to take weeks. With Mindsprint, test assignment, automated evaluation, and report generation take just minutes.' },
+      { avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80', name: 'Pooja Tiwari', company: 'Competitive Exam Aspirant', text: 'The question quality in quantitative aptitude and reasoning is top-notch. The sectional countdown timer and review flags made me exam-ready.' },
+      { avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=200&h=200&q=80', name: 'Rohan Mehta', company: 'Python Certification Candidate', text: 'The coding test questions and instant answer explanations gave me real practical clarity. Highly recommended for every serious learner.' },
     ],
   },
   blog: {
     title: 'Latest Examination News & Study Insights',
     description: 'Expert preparation guides, exam pattern breakdowns, and digital assessment strategies to help you excel.',
     items: [
-      { img: '/eduleb/img/blog/1.jpg', date: 'Oct 28, 2026', category: 'Exam Prep', title: 'Top Strategies to Crack Computer & IT Certification Exams in First Attempt', href: '/blog' },
-      { img: '/eduleb/img/blog/2.jpg', date: 'Oct 25, 2026', category: 'Online CBT', title: 'How AI Proctoring & Timed Mock Tests Boost Real Exam Performance', href: '/blog' },
-      { img: '/eduleb/img/blog/3.jpg', date: 'Oct 20, 2026', category: 'Govt IT', title: 'Complete Guide to CCC & O Level Syllabus, Question Pattern & Mock Papers', href: '/blog' },
+      { img: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=600&q=80', date: 'Oct 28, 2026', category: 'Exam Prep', title: 'Top Strategies to Crack Computer & IT Certification Exams in First Attempt', href: '/blog' },
+      { img: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=600&q=80', date: 'Oct 25, 2026', category: 'Online CBT', title: 'How AI Proctoring & Timed Mock Tests Boost Real Exam Performance', href: '/blog' },
+      { img: 'https://images.unsplash.com/photo-1513258496099-48168024aec0?auto=format&fit=crop&w=600&q=80', date: 'Oct 20, 2026', category: 'Govt IT', title: 'Complete Guide to CCC & O Level Syllabus, Question Pattern & Mock Papers', href: '/blog' },
     ],
   },
 };
