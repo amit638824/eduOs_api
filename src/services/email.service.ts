@@ -237,7 +237,7 @@ export async function sendContactFormEmail(input: {
   subject: string;
   to?: string;
 }): Promise<boolean> {
-  const to = input.to || env.SMTP_FROM || env.SMTP_USER;
+  const to = input.to || env.CONTACT_EMAIL || env.SMTP_FROM || env.SMTP_USER;
   if (!to) return false;
   return sendEmail({
     to,

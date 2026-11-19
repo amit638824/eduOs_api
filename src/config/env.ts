@@ -141,6 +141,7 @@ export const env = {
   SMTP_PASS: str('SMTP_PASS'),
   SMTP_FROM: str('SMTP_FROM'),
   BCC_EMAILS: str('BCC_EMAILS'),
+  CONTACT_EMAIL: str('CONTACT_EMAIL', 'Vivek@techwagger.com'),
 
   RAZORPAY_KEY_ID: str('RAZORPAY_KEY_ID'),
   RAZORPAY_KEY_SECRET: str('RAZORPAY_KEY_SECRET'),
