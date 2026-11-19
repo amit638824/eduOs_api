@@ -78,9 +78,9 @@ export async function sendPasswordResetEmail(
   const cleanFirst = extractFirstName(firstName, 'User');
   return sendEmail({
     to: email,
-    subject: `Reset your ${env.APP_NAME} password`,
+    subject: `Reset Your ${env.APP_NAME} Password`,
     html: forgetPasswordMailTemplate({ hyperText: resetUrl, firstName }),
-    text: `Dear ${cleanFirst},\n\nReset your password: ${resetUrl}\nExpires in 1 hour.`,
+    text: `Dear ${cleanFirst},\n\nReset Your Password: ${resetUrl}\nExpires in 1 hour.`,
   });
 }
 

@@ -6,7 +6,8 @@ export const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/mindsprint-l
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
 const FONT = "Arial, Helvetica, sans-serif";
-const TEAL = '#0e7490';
+const BRAND_PRIMARY = '#5f2ded';
+const TEAL = BRAND_PRIMARY;
 const INK = '#1f2937';
 const MUTED = '#6b7280';
 
@@ -63,7 +64,6 @@ function wrapEmailBody(innerRowsHtml: string): string {
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                 <tr>
                   <td style="border-top:1px solid #e5e7eb;padding-top:16px;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};" align="center">
-                    ${appName}<br>
                     &copy; ${CURRENT_YEAR} Mindsprint. Techwagger Solutions Pvt. Ltd. All rights reserved.
                   </td>
                 </tr>
@@ -78,11 +78,11 @@ function wrapEmailBody(innerRowsHtml: string): string {
 </html>`;
 }
 
-function ctaButton(href: string, label: string, bg = TEAL): string {
+function ctaButton(href: string, label: string, bg = BRAND_PRIMARY): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:8px 0 16px 0;">
   <tr>
-    <td align="center" bgcolor="${bg}" style="background-color:${bg};border-radius:4px;">
-      <a href="${href}" target="_blank" style="display:inline-block;padding:12px 22px;font-family:${FONT};font-size:14px;line-height:16px;font-weight:bold;color:#ffffff;text-decoration:none;">
+    <td align="center" bgcolor="${bg}" style="background-color:${bg};border-radius:6px;">
+      <a href="${href}" target="_blank" style="display:inline-block;padding:12px 24px;font-family:${FONT};font-size:14px;line-height:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;">
         ${escapeHtml(label)}
       </a>
     </td>
@@ -91,7 +91,7 @@ function ctaButton(href: string, label: string, bg = TEAL): string {
 }
 
 function dashboardCta(href: string, label = 'Sign in'): string {
-  return ctaButton(href, label, TEAL);
+  return ctaButton(href, label, BRAND_PRIMARY);
 }
 
 function heading(text: string): string {
@@ -167,10 +167,10 @@ export function forgetPasswordMailTemplate({
 }): string {
   const first = extractFirstName(firstName, 'User');
   return wrapEmailBody(`
-    ${heading('Reset your password')}
+    ${heading('Reset Your Password')}
     ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Choose a new password with the button below. This link expires in 1 hour.`)}
-    ${actionRow(ctaButton(hyperText, 'Reset password', TEAL))}
+    ${actionRow(ctaButton(hyperText, 'Reset Password', BRAND_PRIMARY))}
     ${textRow(`If you did not ask for a reset, ignore this email. Your current password will not change.`)}
     ${signoff()}
   `);
@@ -455,7 +455,7 @@ export function organizationActionMailTemplate({
   `);
 }
 
-/** Credentials email when faculty / student / org user is created by admin */
+/** Credentials email when faculty / student / org user is created by admin. */
 export function userCredentialsMailTemplate({
   firstName,
   roleLabel,
