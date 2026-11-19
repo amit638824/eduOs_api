@@ -1,7 +1,7 @@
 import { query } from '../config/database.js';
 import { env } from '../config/env.js';
 import { hashPassword, hashToken, verifyPassword, generateSecureToken } from '../utils/security.js';
-import { NotFoundError, UnauthorizedError } from '../utils/errors.js';
+import { AppError, NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import { logAudit } from '../utils/auditLogger.js';
 import { sendPasswordResetEmail } from './email.service.js';
 import { isSmtpConfigured } from '../config/env.js';
@@ -13,7 +13,7 @@ export async function requestPasswordReset(email: string) {
     [email.toLowerCase()],
   );
   if (!user.rows[0]) {
-    return { message: 'If the email exists, a reset link has been sent.' };
+    throw new AppError(404, 'This email id is not registered with us', 'NOT_REGISTERED');
   }
 
   const rawToken = generateSecureToken(32);
@@ -35,7 +35,7 @@ export async function requestPasswordReset(email: string) {
   }
 
   const response: Record<string, unknown> = {
-    message: 'If the email exists, a reset link has been sent.',
+    message: 'Email sent successfully',
     emailSent,
   };
   if (!isSmtpConfigured && env.NODE_ENV !== 'production') {
