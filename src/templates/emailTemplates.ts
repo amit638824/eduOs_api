@@ -391,7 +391,7 @@ export function organizationCredentialsMailTemplate({
     ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(
       isApproved
-        ? `Your organization account for <strong>${escapeHtml(orgName)}</strong> is active on <strong>${escapeHtml(env.APP_NAME)}</strong>. Click the button below to set your password and access your administrator portal.`
+        ? `Your <strong>${escapeHtml(orgName)}</strong> organization account on <strong>${escapeHtml(env.APP_NAME)}</strong> is now active. Click the button below to set your password and access your administrator portal.`
         : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it.`,
     )}
     ${detailTable(details)}
