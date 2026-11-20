@@ -13,7 +13,7 @@ export async function requestPasswordReset(email: string) {
     [email.toLowerCase()],
   );
   if (!user.rows[0]) {
-    throw new AppError(404, 'This email id is not registered with us', 'NOT_REGISTERED');
+    throw new AppError(404, 'This email id is not registered with us.', 'NOT_REGISTERED');
   }
 
   const rawToken = generateSecureToken(32);

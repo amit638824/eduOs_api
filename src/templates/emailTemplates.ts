@@ -64,7 +64,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                 <tr>
                   <td style="border-top:1px solid #e5e7eb;padding-top:16px;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};" align="center">
-                    &copy; ${CURRENT_YEAR} Mindsprint. Techwagger Solutions Pvt. Ltd. All rights reserved.
+                    &copy; ${CURRENT_YEAR} MindSprint. Techwagger Solutions Pvt. Ltd. All rights reserved.
                   </td>
                 </tr>
               </table>
@@ -169,9 +169,9 @@ export function forgetPasswordMailTemplate({
   return wrapEmailBody(`
     ${heading('Reset Your Password')}
     ${textRow(`Dear ${escapeHtml(first)},`)}
-    ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Choose a new password with the button below. This link expires in 1 hour.`)}
+    ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Please click the button below to set a new password for your MindSprint account. This password reset link will expire in 1 hour.`)}
     ${actionRow(ctaButton(hyperText, 'Reset Password', BRAND_PRIMARY))}
-    ${textRow(`If you did not ask for a reset, ignore this email. Your current password will not change.`)}
+    ${textRow(`If you did not request a password reset, ignore this email. Your current password will not change.`)}
     ${signoff()}
   `);
 }
@@ -239,7 +239,7 @@ export function adminPasswordResetMailTemplate({
   return wrapEmailBody(`
     ${heading('Set a new password')}
     ${textRow(`Dear ${escapeHtml(first)},`)}
-    ${textRow(`An administrator reset the password on your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Set a new password before you sign in again. This link expires in 1 hour.`)}
+    ${textRow(`An administrator reset the password on your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Set a new password before you sign in again. This password reset link will expire in 1 hour.`)}
     ${actionRow(ctaButton(resetLink, 'Set a new password', TEAL))}
     ${textRow(`If you did not expect this, contact your organization administrator before using the link.`)}
     ${signoff()}

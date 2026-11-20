@@ -237,7 +237,7 @@ export const updateProfileSchema = z.object({
   firstName: z.string().min(1).max(100).trim().optional(),
   lastName: z.string().min(1).max(100).trim().optional(),
   phone: z.string().max(20).optional(),
-  avatarUrl: z.string().url().optional(),
+  avatarUrl: z.string().max(500_000).nullable().optional(),
 });
 
 export const listQuestionsQuerySchema = paginationSchema.extend({
