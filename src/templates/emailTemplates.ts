@@ -455,7 +455,7 @@ export function organizationActionMailTemplate({
   `);
 }
 
-/** Credentials email when faculty / student / org user is created by admin. */
+/** Credentials email when faculty / student / org user is created by admin.. */
 export function userCredentialsMailTemplate({
   firstName,
   roleLabel,
