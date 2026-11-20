@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import mysql from 'mysql2/promise';
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { env } from './env.js';
-import { normalizeJsonColumns, parseJsonField } from '../utils/json.js';
+import { normalizeJsonColumns, parseJsonField, JSON_COLUMN_KEYS } from '../utils/json.js';
 
 export type DbRow = { [key: string]: any };
 
@@ -33,14 +33,14 @@ function baseConnConfig() {
     ssl: sslOption(),
     decimalNumbers: true,
     supportBigNumbers: true,
-    typeCast(field: { type: string; length: number; string: () => string | null }, next: () => unknown) {
+    typeCast(field: { name: string; type: string; length: number; string: () => string | null }, next: () => unknown) {
       if (field.type === 'TINY' && field.length === 1) {
         const value = field.string();
         if (value === null) return null;
         return value === '1';
       }
       // MariaDB may report JSON as JSON, or as string/blob aliases.
-      if (field.type === 'JSON') {
+      if (field.type === 'JSON' || JSON_COLUMN_KEYS.has(field.name)) {
         const value = field.string();
         if (value == null) return null;
         return parseJsonField(value);

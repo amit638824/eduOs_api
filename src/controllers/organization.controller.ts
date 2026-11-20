@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { vQuery, vParams } from '../middleware/validate.js';
 import { ForbiddenError } from '../utils/errors.js';
+import { asJsonObject } from '../utils/json.js';
 import * as orgService from '../services/organization.service.js';
 import { notifyOrganizationOfSuperAdminAction, sendOrganizationCredentialsEmail } from '../services/email.service.js';
+import { OrganizationActionType } from '../templates/emailTemplates.js';
 
 function assertCanAccessOrg(req: Request, targetOrgId: string) {
   const isSuperAdmin = req.user!.roles.includes('super_admin');
@@ -140,26 +142,50 @@ export async function updateOrganization(
     const org = await orgService.updateOrganization(id, req.body);
 
     if (req.user!.roles.includes('super_admin')) {
-      const becameActive = !before.is_active && org.is_active;
-      const becameInactive = before.is_active && org.is_active === false;
-      const action = becameActive
-        ? 'approved'
-        : becameInactive
-          ? 'deactivated'
-          : 'updated';
-      const message = becameActive
-        ? 'Your organization access has been approved. Pending users are now active — you can log in and manage your organization.'
-        : becameInactive
-          ? 'Your organization has been deactivated by Super Admin. Contact support if this is unexpected.'
-          : 'Your organization details were updated by Super Admin on the platform.';
+      const wasActive = Boolean(before.is_active);
+      const isNowActive = Boolean(org.is_active);
+      const becameActive = !wasActive && isNowActive;
+      const becameInactive = wasActive && !isNowActive;
 
-      fireOrgMail({
-        organizationId: id,
-        orgName: (org.name as string) || (before.name as string),
-        action,
-        message,
-        actorName: actorName(req),
-      });
+      const beforeSettings = asJsonObject(before.settings) ?? {};
+      const afterSettings = asJsonObject(org.settings) ?? {};
+      const extraEmails = [
+        beforeSettings.contactEmail,
+        afterSettings.contactEmail,
+        req.body.contactEmail,
+      ].filter((e): e is string => typeof e === 'string' && e.includes('@'));
+
+      if (becameActive || becameInactive) {
+        const action: OrganizationActionType = becameActive ? 'reactivated' : 'suspended';
+        const orgDisplayName = (org.name as string) || (before.name as string);
+        const message = becameActive
+          ? `${orgDisplayName} account has been reactivated. All associated administrators, faculty, and student accounts are active again, and you can now log in.`
+          : `${orgDisplayName} account has been suspended. Sign-in and access for all associated administrators, faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`;
+
+        fireOrgMail({
+          organizationId: id,
+          orgName: orgDisplayName,
+          action,
+          message,
+          actorName: actorName(req),
+          extraEmails,
+        });
+      } else if (
+        req.body.name !== undefined ||
+        req.body.slug !== undefined ||
+        req.body.contactEmail !== undefined ||
+        req.body.theme !== undefined ||
+        req.body.settings !== undefined
+      ) {
+        fireOrgMail({
+          organizationId: id,
+          orgName: (org.name as string) || (before.name as string),
+          action: 'updated',
+          message: 'Your organization details were updated by Super Admin on the platform.',
+          actorName: actorName(req),
+          extraEmails,
+        });
+      }
     }
 
     res.json({ success: true, data: org });
@@ -175,16 +201,27 @@ export async function verifyOrganization(
 ): Promise<void> {
   try {
     const { id } = vParams(req) as { id: string };
+    const before = await orgService.getOrganizationById(id);
     const org = await orgService.verifyOrganization(id);
 
-    fireOrgMail({
-      organizationId: id,
-      orgName: org.name as string,
-      action: 'approved',
-      message:
-        'Congratulations! Your organization has been approved by Super Admin. You and your pending users can now access the platform.',
-      actorName: actorName(req),
-    });
+    // Only fire mail if the organization was not already active (avoids duplicate if updateOrganization was called right before)
+    if (!before.is_active) {
+      const beforeSettings = asJsonObject(before.settings) ?? {};
+      const afterSettings = asJsonObject(org.settings) ?? {};
+      const extraEmails = [beforeSettings.contactEmail, afterSettings.contactEmail].filter(
+        (e): e is string => typeof e === 'string' && e.includes('@'),
+      );
+
+      fireOrgMail({
+        organizationId: id,
+        orgName: org.name as string,
+        action: 'reactivated',
+        message:
+          `${org.name} account has been reactivated. All associated administrators, faculty, and student accounts are active again, and you can now log in.`,
+        actorName: actorName(req),
+        extraEmails,
+      });
+    }
 
     res.json({ success: true, data: org, message: 'Organization approved' });
   } catch (error) {

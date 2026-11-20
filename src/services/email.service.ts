@@ -251,11 +251,13 @@ export async function sendContactFormEmail(input: {
 }
 
 const ORG_ACTION_SUBJECT: Record<OrganizationActionType, string> = {
-  created: 'Your organization has been registered',
-  approved: 'Your organization has been approved',
-  updated: 'Your organization details were updated',
-  deleted: 'Your organization has been removed',
-  deactivated: 'Your organization access is paused',
+  created: 'Your Organization Has Been Registered',
+  approved: 'Your Organization Has Been Approved',
+  reactivated: 'Your Organization Account Has Been Reactivated',
+  updated: 'Your Organization Details Were Updated',
+  deleted: 'Your Organization Has Been Removed',
+  deactivated: 'Your Organization Account Has Been Suspended',
+  suspended: 'Your Organization Account Has Been Suspended',
 };
 
 /**
@@ -271,7 +273,7 @@ export async function notifyOrganizationOfSuperAdminAction(input: {
 }): Promise<boolean> {
   const emails = new Set(await orgService.getOrganizationNotifyEmails(input.organizationId));
   for (const e of input.extraEmails ?? []) {
-    if (e.includes('@')) emails.add(e.toLowerCase().trim());
+    if (typeof e === 'string' && e.includes('@')) emails.add(e.toLowerCase().trim());
   }
   if (emails.size === 0) {
     console.warn(
@@ -279,6 +281,9 @@ export async function notifyOrganizationOfSuperAdminAction(input: {
     );
     return false;
   }
+
+  const isSuspended = input.action === 'deactivated' || input.action === 'suspended';
+  const actionUrl = frontendUrl(isSuspended ? '/contact' : '/login');
 
   const to = Array.from(emails);
   return sendEmail({
@@ -289,7 +294,7 @@ export async function notifyOrganizationOfSuperAdminAction(input: {
       action: input.action,
       message: input.message,
       actorName: input.actorName,
-      actionUrl: frontendUrl('/login'),
+      actionUrl,
     }),
     text: `${ORG_ACTION_SUBJECT[input.action]}: ${input.orgName}\n\n${input.message}`,
   });

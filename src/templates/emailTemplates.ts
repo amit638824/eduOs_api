@@ -1,12 +1,10 @@
 import { env } from '../config/env.js';
 
 const UI_BASE_URL = env.FRONTEND_URL.replace(/\/$/, '');
-/** Hosted MindSprint mark. */
-const LOGO_URL = 'https://mindsprint.techwagger.com/img/logo/mindsprint-logo.png';
 const TEAM_NAME = `Team ${env.APP_NAME}`;
 const CURRENT_YEAR = new Date().getFullYear();
 const FONT = "Arial, Helvetica, sans-serif";
-const BRAND_PRIMARY = '#5f2ded';
+const BRAND_PRIMARY = '#2643f6';
 const TEAL = BRAND_PRIMARY;
 const INK = '#1f2937';
 const MUTED = '#6b7280';
@@ -406,7 +404,9 @@ export type OrganizationActionType =
   | 'approved'
   | 'updated'
   | 'deleted'
-  | 'deactivated';
+  | 'deactivated'
+  | 'suspended'
+  | 'reactivated';
 
 /** Notify organization when Super Admin performs an action */
 export function organizationActionMailTemplate({
@@ -423,34 +423,51 @@ export function organizationActionMailTemplate({
   actionUrl?: string;
 }): string {
   const titles: Record<OrganizationActionType, string> = {
-    created: 'Organization registered',
-    approved: 'Organization approved',
-    updated: 'Organization details updated',
-    deleted: 'Organization removed',
-    deactivated: 'Organization access paused',
+    created: 'Organization Registered',
+    approved: 'Organization Approved',
+    reactivated: 'Organization Reactivated',
+    updated: 'Organization Details Updated',
+    deleted: 'Organization Removed',
+    deactivated: 'Organization Suspended',
+    suspended: 'Organization Suspended',
+  };
+  const statusValues: Record<OrganizationActionType, string> = {
+    created: 'Registered',
+    approved: 'Approved',
+    reactivated: 'Reactivated',
+    updated: 'Updated',
+    deleted: 'Removed',
+    deactivated: 'Suspended',
+    suspended: 'Suspended',
   };
   const leads: Record<OrganizationActionType, string> = {
     created: `${orgName} has been registered on ${env.APP_NAME}. A platform administrator will review it before the account can be used.`,
     approved: `${orgName} is approved. You can sign in and manage exams, faculty, and students.`,
+    reactivated: `${orgName} account has been reactivated. All associated administrators, faculty, and student accounts are active again, and you can now log in.`,
     updated: `The record for ${orgName} was updated. Sign in if you need to confirm the new details.`,
     deleted: `${orgName} has been removed from ${env.APP_NAME}. Sign-in for this organization is no longer available.`,
-    deactivated: `${orgName} has been deactivated. Sign-in is paused until a platform administrator restores access.`,
+    deactivated: `${orgName} account has been suspended. Sign-in and access for all associated administrators, faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`,
+    suspended: `${orgName} account has been suspended. Sign-in and access for all associated administrators, faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`,
   };
-  const showSignIn = action === 'approved' || action === 'created' || action === 'updated';
-  const showSupport = action === 'deactivated';
+  const showSignIn = action === 'approved' || action === 'reactivated' || action === 'created' || action === 'updated';
+  const showSupport = action === 'deactivated' || action === 'suspended';
+
+  const bodyText =
+    action === 'suspended' || action === 'deactivated' || action === 'reactivated'
+      ? textRow(escapeHtml(leads[action]))
+      : `${textRow(escapeHtml(leads[action]))}${message && message !== leads[action] ? textRow(escapeHtml(message)) : ''}`;
 
   return wrapEmailBody(`
     ${heading(titles[action])}
     ${textRow(`Dear Organization Admin,`)}
-    ${textRow(escapeHtml(leads[action]))}
-    ${textRow(escapeHtml(message))}
+    ${bodyText}
     ${detailTable([
       { label: 'Organization', value: orgName },
-      { label: 'Update', value: titles[action] },
-      { label: 'Updated by', value: actorName ? `${actorName}, platform administrator` : '' },
+      { label: 'Status', value: statusValues[action] },
+      { label: 'Updated By', value: actorName ? `${actorName}` : 'Platform Administrator' },
     ])}
-    ${showSignIn ? actionRow(dashboardCta(actionUrl, 'Sign in')) : ''}
-    ${showSupport ? actionRow(ctaButton(actionUrl, 'Contact support', '#b45309')) : ''}
+    ${showSignIn ? actionRow(dashboardCta(actionUrl, 'Sign In')) : ''}
+    ${showSupport ? actionRow(ctaButton(actionUrl, 'Contact Support', BRAND_PRIMARY)) : ''}
     ${signoff()}
   `);
 }

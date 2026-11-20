@@ -277,7 +277,7 @@ export async function getOrganizationNotifyEmails(organizationId: string): Promi
        JOIN roles r ON r.id = ur.role_id
        WHERE u.organization_id = $1
          AND u.deleted_at IS NULL
-         AND u.status IN ('active', 'pending')
+         AND u.status IN ('active', 'pending', 'suspended')
          AND r.name IN ('org_admin', 'branch_admin')`,
       [organizationId],
     ),
@@ -301,6 +301,16 @@ export async function getOrganizationNotifyEmails(organizationId: string): Promi
   if (Array.isArray(extra)) {
     for (const e of extra) {
       if (typeof e === 'string' && e.includes('@')) emails.add(e.toLowerCase().trim());
+    }
+  }
+
+  if (emails.size === 0) {
+    const fallbackUser = await query<{ email: string }>(
+      `SELECT email FROM users WHERE organization_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`,
+      [organizationId],
+    );
+    if (fallbackUser.rows[0]?.email) {
+      emails.add(fallbackUser.rows[0].email.toLowerCase().trim());
     }
   }
 

@@ -2,17 +2,7 @@ import { query, withTransaction } from '../config/database.js';
 import { ForbiddenError, NotFoundError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 import { recalcTestsForQuestion } from './test.service.js';
-
-function parseJsonField(value: unknown): unknown {
-  if (value == null || typeof value !== 'string') return value;
-  const trimmed = value.trim();
-  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return value;
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return value;
-  }
-}
+import { parseJsonField } from '../utils/json.js';
 
 function normalizeQuestionRow<T extends Record<string, unknown>>(row: T): T {
   return {

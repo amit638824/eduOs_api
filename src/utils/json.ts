@@ -1,10 +1,17 @@
-/** MariaDB often returns JSON columns as strings (sometimes double-encoded). */
+/** MariaDB often returns JSON columns as strings (sometimes double-encoded) or Buffers. */
 export function parseJsonField(value: unknown): unknown {
   let current: unknown = value;
   if (Buffer.isBuffer(current)) {
     current = current.toString('utf8');
+  } else if (
+    current &&
+    typeof current === 'object' &&
+    (current as { type?: unknown }).type === 'Buffer' &&
+    Array.isArray((current as { data?: unknown }).data)
+  ) {
+    current = Buffer.from((current as { data: number[] }).data).toString('utf8');
   }
-  for (let i = 0; i < 2; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     if (typeof current !== 'string') break;
     const trimmed = current.trim();
     if (!trimmed) return null;
