@@ -64,7 +64,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                 <tr>
                   <td style="border-top:1px solid #e5e7eb;padding-top:16px;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};" align="center">
-                    &copy; ${CURRENT_YEAR} Mindsprint. Techwagger Solutions Pvt. Ltd. All rights reserved.
+                    &copy; ${CURRENT_YEAR} MindSprint. Techwagger Solutions Pvt. Ltd. All rights reserved.
                   </td>
                 </tr>
               </table>
@@ -169,9 +169,9 @@ export function forgetPasswordMailTemplate({
   return wrapEmailBody(`
     ${heading('Reset Your Password')}
     ${textRow(`Dear ${escapeHtml(first)},`)}
-    ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Choose a new password with the button below. This link expires in 1 hour.`)}
+    ${textRow(`We received a request to reset the password for your <strong>${escapeHtml(env.APP_NAME)}</strong> account. Please click the button below to set a new password for your MindSprint account. This password reset link will expire in 1 hour.`)}
     ${actionRow(ctaButton(hyperText, 'Reset Password', BRAND_PRIMARY))}
-    ${textRow(`If you did not ask for a reset, ignore this email. Your current password will not change.`)}
+    ${textRow(`If you did not request a password reset, ignore this email. Your current password will not change.`)}
     ${signoff()}
   `);
 }
@@ -406,7 +406,41 @@ export type OrganizationActionType =
   | 'approved'
   | 'updated'
   | 'deleted'
-  | 'deactivated';
+  | 'deactivated'
+  | 'suspended'
+  | 'reactivated';
+
+function orgDetailsTable(rows: { label: string; value: string }[]): string {
+  const body = rows
+    .filter((row) => row.value.trim() !== '')
+    .map(
+      (row) => `<tr>
+      <td width="180" valign="top" style="width:180px;padding:10px 14px;border-bottom:1px solid #e5e7eb;background-color:#f8fafc;font-family:${FONT};font-size:13px;line-height:20px;color:#475569;font-weight:600;">
+        ${escapeHtml(row.label)}
+      </td>
+      <td valign="top" style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-family:${FONT};font-size:14px;line-height:20px;color:${INK};">
+        ${escapeHtml(row.value)}
+      </td>
+    </tr>`,
+    )
+    .join('');
+  return `<tr>
+    <td style="padding:4px 0 16px 0;">
+      <div style="font-family:${FONT};font-size:15px;font-weight:bold;color:#0f172a;margin-bottom:8px;">Organization Details</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #e5e7eb;">
+        <thead>
+          <tr>
+            <th width="180" align="left" style="width:180px;padding:10px 14px;border-bottom:2px solid #e2e8f0;background-color:#f1f5f9;font-family:${FONT};font-size:12px;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:0.5px;">Field</th>
+            <th align="left" style="padding:10px 14px;border-bottom:2px solid #e2e8f0;background-color:#f1f5f9;font-family:${FONT};font-size:12px;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:0.5px;">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${body}
+        </tbody>
+      </table>
+    </td>
+  </tr>`;
+}
 
 /** Notify organization when Super Admin performs an action */
 export function organizationActionMailTemplate({
@@ -418,39 +452,93 @@ export function organizationActionMailTemplate({
 }: {
   orgName: string;
   action: OrganizationActionType;
-  message: string;
+  message?: string;
   actorName?: string;
   actionUrl?: string;
 }): string {
+  const adminEmail = actorName && actorName.includes('@') ? actorName : 'superadmin@edutech.com';
+
+  if (action === 'deactivated' || action === 'suspended') {
+    return wrapEmailBody(`
+      ${heading('Organization Account Suspended')}
+      ${textRow(`Dear Organization Administrator,`)}
+      ${textRow(`This is to inform you that <strong>${escapeHtml(orgName)}</strong> has been suspended by the Super Administrator.`)}
+      ${textRow(`As a result, access to your organization account and all associated user accounts has been temporarily restricted. Users will be unable to sign in until access is restored by the platform administrator.`)}
+      ${textRow(`If you believe this action was taken in error or require further clarification, please contact our support team.`)}
+      ${orgDetailsTable([
+        { label: 'Organization', value: orgName },
+        { label: 'Status', value: 'Suspended' },
+        { label: 'Action performed by', value: 'Platform Administrator' },
+        { label: 'Administrator email', value: adminEmail },
+      ])}
+      ${actionRow(ctaButton(`mailto:${adminEmail}`, 'Contact Support', BRAND_PRIMARY))}
+      ${signoff()}
+    `);
+  }
+
+  if (action === 'reactivated' || action === 'approved') {
+    return wrapEmailBody(`
+      ${heading('Organization Account Activated')}
+      ${textRow(`Dear Organization Administrator,`)}
+      ${textRow(`This is to inform you that <strong>${escapeHtml(orgName)}</strong> has been activated by the Super Administrator.`)}
+      ${textRow(`Access to your organization account and all associated user accounts has been restored. Users can now sign in to the platform.`)}
+      ${orgDetailsTable([
+        { label: 'Organization', value: orgName },
+        { label: 'Status', value: 'Active' },
+        { label: 'Action performed by', value: 'Platform Administrator' },
+        { label: 'Administrator email', value: adminEmail },
+      ])}
+      ${actionRow(dashboardCta(actionUrl, 'Sign In'))}
+      ${signoff()}
+    `);
+  }
+
+  if (action === 'updated') {
+    return wrapEmailBody(`
+      ${heading('Organization Details Updated')}
+      ${textRow(`Dear Organization Administrator,`)}
+      ${textRow(`This is to inform you that details for <strong>${escapeHtml(orgName)}</strong> have been updated by the Super Administrator.`)}
+      ${orgDetailsTable([
+        { label: 'Organization', value: orgName },
+        { label: 'Status', value: 'Updated' },
+        { label: 'Action performed by', value: 'Platform Administrator' },
+        { label: 'Administrator email', value: adminEmail },
+      ])}
+      ${actionRow(dashboardCta(actionUrl, 'Sign In'))}
+      ${signoff()}
+    `);
+  }
+
   const titles: Record<OrganizationActionType, string> = {
     created: 'Organization registered',
     approved: 'Organization approved',
     updated: 'Organization details updated',
     deleted: 'Organization removed',
     deactivated: 'Organization access paused',
+    suspended: 'Organization access suspended',
+    reactivated: 'Organization access reactivated',
   };
   const leads: Record<OrganizationActionType, string> = {
     created: `${orgName} has been registered on ${env.APP_NAME}. A platform administrator will review it before the account can be used.`,
     approved: `${orgName} is approved. You can sign in and manage exams, faculty, and students.`,
     updated: `The record for ${orgName} was updated. Sign in if you need to confirm the new details.`,
     deleted: `${orgName} has been removed from ${env.APP_NAME}. Sign-in for this organization is no longer available.`,
-    deactivated: `${orgName} has been deactivated. Sign-in is paused until a platform administrator restores access.`,
+    deactivated: `${orgName} has been suspended. Sign-in is paused until a platform administrator restores access.`,
+    suspended: `${orgName} has been suspended. Sign-in is paused until a platform administrator restores access.`,
+    reactivated: `${orgName} has been reactivated. Users can sign in again.`,
   };
-  const showSignIn = action === 'approved' || action === 'created' || action === 'updated';
-  const showSupport = action === 'deactivated';
 
   return wrapEmailBody(`
-    ${heading(titles[action])}
-    ${textRow(`Dear Organization Admin,`)}
-    ${textRow(escapeHtml(leads[action]))}
-    ${textRow(escapeHtml(message))}
-    ${detailTable([
+    ${heading(titles[action] || 'Organization Notification')}
+    ${textRow(`Dear Organization Administrator,`)}
+    ${textRow(escapeHtml(leads[action] || 'An update occurred on your organization.'))}
+    ${message ? textRow(escapeHtml(message)) : ''}
+    ${orgDetailsTable([
       { label: 'Organization', value: orgName },
-      { label: 'Update', value: titles[action] },
-      { label: 'Updated by', value: actorName ? `${actorName}, platform administrator` : '' },
+      { label: 'Status', value: titles[action] || 'Updated' },
+      { label: 'Action performed by', value: 'Platform Administrator' },
+      { label: 'Administrator email', value: adminEmail },
     ])}
-    ${showSignIn ? actionRow(dashboardCta(actionUrl, 'Sign in')) : ''}
-    ${showSupport ? actionRow(ctaButton(actionUrl, 'Contact support', '#b45309')) : ''}
     ${signoff()}
   `);
 }

@@ -112,7 +112,7 @@ export const env = {
   AUTH_RATE_LIMIT_MAX: num('AUTH_RATE_LIMIT_MAX', 10),
 
   BCRYPT_ROUNDS: num('BCRYPT_ROUNDS', 12),
-  APP_NAME: str('APP_NAME', 'Mindsprint'),
+  APP_NAME: str('APP_NAME', 'MindSprint'),
   TRUST_PROXY: num('TRUST_PROXY', 1),
 
   /** Used in email links (login, reset password, dashboard) */
