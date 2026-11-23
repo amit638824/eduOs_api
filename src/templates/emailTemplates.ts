@@ -273,7 +273,7 @@ export function examAssignmentMailTemplate({
   scheduledTime,
   durationMinutes,
   status,
-  dashboardUrl = `${UI_BASE_URL}/dashboard`,
+  loginUrl = `${UI_BASE_URL}/login`,
 }: {
   studentName: string;
   examName: string;
@@ -281,13 +281,13 @@ export function examAssignmentMailTemplate({
   scheduledTime?: string | null;
   durationMinutes?: number | null;
   status?: string | null;
-  dashboardUrl?: string;
+  loginUrl?: string;
 }): string {
   const first = extractFirstName(studentName, 'Student');
   return wrapEmailBody(`
     ${heading('An exam has been assigned to you')}
     ${textRow(`Dear ${escapeHtml(first)},`)}
-    ${textRow(`Your institute assigned an exam on <strong>${escapeHtml(env.APP_NAME)}</strong>. Sign in before the scheduled time and read the instructions on the exam page.`)}
+    ${textRow(`Your institute assigned an exam on <strong>${escapeHtml(env.APP_NAME)}</strong>. Sign in with your student credentials before the scheduled time and read the instructions on the exam page.`)}
     ${detailTable([
       { label: 'Exam', value: examName },
       { label: 'Date', value: scheduledDate ?? '' },
@@ -295,7 +295,7 @@ export function examAssignmentMailTemplate({
       { label: 'Duration', value: durationMinutes != null ? `${durationMinutes} minutes` : '' },
       { label: 'Status', value: status ?? '' },
     ])}
-    ${actionRow(dashboardCta(dashboardUrl, 'Open my exams'))}
+    ${actionRow(dashboardCta(loginUrl, 'Open my exams'))}
     ${textRow(`Start only when you are ready. If the exam uses fullscreen, stay in that mode until you submit. The timer cannot be paused.`)}
     ${signoff()}
   `);

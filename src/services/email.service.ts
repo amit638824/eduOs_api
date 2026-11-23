@@ -147,7 +147,7 @@ export async function sendExamAssignmentEmail(input: {
   durationMinutes?: number | null;
   status?: string | null;
 }): Promise<boolean> {
-  const dashboardUrl = frontendUrl('/dashboard');
+  const loginUrl = frontendUrl(`/login?email=${encodeURIComponent(input.to)}`);
 
   return sendEmail({
     to: input.to,
@@ -159,7 +159,7 @@ export async function sendExamAssignmentEmail(input: {
       scheduledTime: input.scheduledTime,
       durationMinutes: input.durationMinutes,
       status: input.status,
-      dashboardUrl,
+      loginUrl,
     }),
     text: [
       `Hello ${input.studentName},`,
@@ -170,7 +170,7 @@ export async function sendExamAssignmentEmail(input: {
       input.durationMinutes ? `Duration: ${input.durationMinutes} minutes` : null,
       input.status ? `Status: ${input.status}` : null,
       '',
-      `Open your dashboard: ${dashboardUrl}`,
+      `Sign in to open your exam: ${loginUrl}`,
     ]
       .filter(Boolean)
       .join('\n'),
