@@ -69,7 +69,7 @@ export async function listUsers(
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.status, u.branch_id, u.created_at,
               st.admission_no AS enrollment_no,
               COALESCE(
                 (SELECT CONCAT(
@@ -102,7 +102,7 @@ export async function listUsers(
 
 export async function getUser(userId: string, organizationId: string) {
   const result = await query(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.status, u.branch_id, u.created_at,
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.status, u.branch_id, u.created_at,
             st.admission_no AS enrollment_no,
             COALESCE(
               (SELECT CONCAT(
