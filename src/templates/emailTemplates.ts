@@ -44,7 +44,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#f3f5f7;">
     <tr>
       <td align="center" style="padding:32px 12px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:600px;max-width:600px;background-color:#ffffff;border:1px solid #e5e7eb;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:600px;max-width:600px;background-color:#ffffff;border:1px solid #e5e7eb;table-layout:fixed;">
           <tr>
             <td align="left" style="padding:32px 32px 20px 32px;background-color:#ffffff;">
               <a href="${UI_BASE_URL}" target="_blank" style="text-decoration:none;display:inline-block;">
@@ -54,7 +54,7 @@ function wrapEmailBody(innerRowsHtml: string): string {
           </tr>
           <tr>
             <td style="padding:10px 32px 12px 32px;font-family:${FONT};font-size:15px;line-height:24px;color:${INK};">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;table-layout:fixed;width:100%;">
                 ${innerRowsHtml}
               </table>
             </td>
@@ -123,10 +123,10 @@ function detailTable(rows: { label: string; value: string }[]): string {
     .filter((row) => row.value.trim() !== '')
     .map(
       (row) => `<tr>
-      <td width="168" valign="top" style="width:168px;padding:12px 14px;border-bottom:1px solid #e5e7eb;background-color:#f8fafc;font-family:${FONT};font-size:13px;line-height:20px;color:${MUTED};">
+      <td width="140" valign="top" style="width:140px;max-width:140px;padding:12px 14px;border-bottom:1px solid #e5e7eb;background-color:#f8fafc;font-family:${FONT};font-size:13px;line-height:20px;font-weight:600;color:${MUTED};word-break:keep-all;white-space:nowrap;">
         ${escapeHtml(row.label)}
       </td>
-      <td valign="top" style="padding:12px 14px;border-bottom:1px solid #e5e7eb;font-family:${FONT};font-size:14px;line-height:20px;color:${INK};">
+      <td valign="top" style="padding:12px 14px;border-bottom:1px solid #e5e7eb;font-family:${FONT};font-size:14px;line-height:22px;color:${INK};word-break:break-word;overflow-wrap:anywhere;word-wrap:break-word;white-space:pre-wrap;max-width:396px;">
         ${escapeHtml(row.value)}
       </td>
     </tr>`,
@@ -134,7 +134,7 @@ function detailTable(rows: { label: string; value: string }[]): string {
     .join('');
   return `<tr>
     <td style="padding:0 0 16px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #e5e7eb;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;table-layout:fixed;width:100%;max-width:100%;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
         ${body}
       </table>
     </td>
@@ -215,15 +215,32 @@ export function contactFormMailTemplate({
   subject: string;
 }): string {
   return wrapEmailBody(`
-    ${heading('New contact enquiry')}
-    ${textRow(`A visitor sent a message from the ${escapeHtml(env.APP_NAME)} contact form. Reply to the email address below.`)}
+    ${heading('New Contact Enquiry')}
+    ${textRow(`A visitor submitted a new enquiry from the <strong>${escapeHtml(env.APP_NAME)}</strong> contact &amp; demo form. Reply directly to this email or reach out using the details below.`)}
     ${detailTable([
       { label: 'Name', value: name },
       { label: 'Email', value: email },
       { label: 'Phone', value: phone || 'Not provided' },
       { label: 'Subject', value: subject },
-      { label: 'Message', value: message },
     ])}
+    <tr>
+      <td style="padding:6px 0 6px 0;font-family:${FONT};font-size:12px;font-weight:bold;color:${MUTED};text-transform:uppercase;letter-spacing:0.5px;">
+        Message / Requirement
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0 0 16px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;table-layout:fixed;width:100%;max-width:100%;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #2563eb;border-radius:6px;">
+          <tr>
+            <td style="padding:14px 16px;font-family:${FONT};font-size:14px;line-height:22px;color:${INK};word-break:break-all;word-break:break-word;overflow-wrap:anywhere;word-wrap:break-word;white-space:pre-wrap;">
+              ${escapeHtml(message)}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    ${actionRow(ctaButton(`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Re: ' + subject)}`, 'Reply to Visitor', BRAND_PRIMARY))}
+    ${signoff()}
   `);
 }
 
@@ -409,7 +426,6 @@ export type OrganizationActionType =
   | 'deactivated'
   | 'suspended'
   | 'reactivated';
-
 /** Notify organization when Super Admin performs an action */
 export function organizationActionMailTemplate({
   orgName,
@@ -420,7 +436,7 @@ export function organizationActionMailTemplate({
 }: {
   orgName: string;
   action: OrganizationActionType;
-  message: string;
+  message?: string;
   actorName?: string;
   actionUrl?: string;
 }): string {
@@ -445,11 +461,11 @@ export function organizationActionMailTemplate({
   const leads: Record<OrganizationActionType, string> = {
     created: `${orgName} has been registered on ${env.APP_NAME}. A platform administrator will review it before the account can be used.`,
     approved: `${orgName} is approved. You can sign in and manage exams, faculty, and students.`,
-    reactivated: `${orgName} account has been reactivated.All associated administrators, faculty, and student accounts are active again, and you can now log in.`,
+    reactivated: `${orgName} account has been reactivated. All associated administrators, faculty, and student accounts are active again, and you can now log in.`,
     updated: `The record for ${orgName} was updated. Sign in if you need to confirm the new details.`,
     deleted: `${orgName} has been removed from ${env.APP_NAME}. Sign-in for this organization is no longer available.`,
-    deactivated: `${orgName} account has been suspended. Sign-in and access for all associated administrators,faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`,
-    suspended: `${orgName} account has been suspended. Sign-in and access for all associated administrators,faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`,
+    deactivated: `${orgName} account has been suspended. Sign-in and access for all associated administrators, faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`,
+    suspended: `${orgName} account has been suspended. Sign-in and access for all associated administrators, faculty and students are temporarily paused. If you believe this is unexpected, please contact support.`,
   };
   const showSignIn = action === 'approved' || action === 'reactivated' || action === 'created' || action === 'updated';
   const showSupport = action === 'deactivated' || action === 'suspended';

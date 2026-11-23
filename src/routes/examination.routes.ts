@@ -8,6 +8,7 @@ import {
 import {
   authenticate,
   requirePermission,
+  requireRoles,
   forbidSuperAdmin,
 } from '../middleware/auth.js';
 import * as aiController from '../controllers/ai.controller.js';
@@ -500,6 +501,7 @@ router.get(
 );
 
 router.get('/analytics/dashboard', examController.getAdminDashboard);
+router.get('/analytics/super-admin', requireRoles('super_admin'), examController.getSuperAdminDashboard);
 
 router.get(
   '/analytics/tests/:testId',

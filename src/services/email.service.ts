@@ -238,10 +238,23 @@ export async function sendContactFormEmail(input: {
   phone: string;
   message: string;
   subject: string;
-  to?: string;
+  to?: string | string[];
 }): Promise<boolean> {
-  const to = input.to || env.CONTACT_EMAIL || env.SMTP_FROM || env.SMTP_USER;
-  if (!to) return false;
+  const configuredRecipients = (env.CONTACT_EMAIL || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const fallbackRecipients = [env.SMTP_FROM, env.SMTP_USER].filter(Boolean) as string[];
+
+  const to =
+    input.to ||
+    (configuredRecipients.length > 0
+      ? configuredRecipients
+      : fallbackRecipients.length > 0
+        ? fallbackRecipients
+        : ['vivek@techwagger.com']);
+
   return sendEmail({
     to,
     subject: `New contact enquiry: ${input.subject}`,

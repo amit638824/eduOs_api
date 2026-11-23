@@ -19,12 +19,14 @@ export async function submitContactForm(req: Request, res: Response, next: NextF
       return;
     }
 
+    const cleanMessage = String(message).trim().slice(0, 300);
+
     const sent = await sendContactFormEmail({
       name: String(name).trim(),
       email: String(email).trim(),
       phone: phone ? String(phone).trim() : '',
       subject: subject ? String(subject).trim() : 'General Enquiry',
-      message: String(message).trim(),
+      message: cleanMessage,
     });
 
     if (!sent) {
