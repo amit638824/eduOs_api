@@ -1039,7 +1039,7 @@ export async function getSuperAdminDashboard(timeRange = 'Last 30 Days'): Promis
          SUM(CASE WHEN created_at >= $1 THEN 1 ELSE 0 END)::int AS current_window,
          SUM(CASE WHEN created_at >= $2 AND created_at < $1 THEN 1 ELSE 0 END)::int AS prev_window
        FROM questions
-       WHERE deleted_at IS NULL`,
+       WHERE archived_at IS NULL`,
       [currentWindowStart, prevWindowStart],
     ),
     // 7. Active sessions (in_progress attempts)
