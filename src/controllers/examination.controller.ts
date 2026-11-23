@@ -545,8 +545,17 @@ export async function getAnalytics(req: Request, res: Response, next: NextFuncti
 
 export async function getAdminDashboard(req: Request, res: Response, next: NextFunction) {
   try {
-    const { orgId } = await orgContext(req);
     const roles = req.user!.roles;
+    if (roles.includes('super_admin')) {
+      const isTenantScope = Boolean(req.headers['x-organization-id'] && req.query.scope === 'tenant');
+      if (!isTenantScope) {
+        const data = await analyticsService.getSuperAdminDashboard(String(req.query.timeRange || 'Last 30 Days'));
+        res.json({ success: true, data });
+        return;
+      }
+    }
+
+    const { orgId } = await orgContext(req);
     const isOrgStaff = roles.some((role) =>
       ['super_admin', 'org_admin', 'staff', 'branch_admin'].includes(role),
     );
@@ -562,6 +571,15 @@ export async function getAdminDashboard(req: Request, res: Response, next: NextF
       return;
     }
     const data = await analyticsService.getAdminDashboard(orgId);
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getSuperAdminDashboard(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await analyticsService.getSuperAdminDashboard(String(req.query.timeRange || 'Last 30 Days'));
     res.json({ success: true, data });
   } catch (e) {
     next(e);
