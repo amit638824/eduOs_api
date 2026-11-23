@@ -1,9 +1,9 @@
 export const homepageContent = {
   hero: {
-    badge: 'AI-POWERED ONLINE EXAMINATION & ASSESSMENT PLATFORM',
-    titleBefore: 'Smart Online Examination Platform for',
+    badge: 'AI-POWERED MINDSPRINT ASSESSMENT PLATFORM',
+    titleBefore: 'Smart Mindsprint Platform for',
     phrases: ['Competitive Exams', 'Schools & Colleges', 'Govt IT & Certifications', 'Skill Assessments', 'CBT Mock Tests'],
-    description: 'Empower your institution and learners with AI-proctored online exams, comprehensive question banks, instant auto-evaluation, and verified digital certificates.',
+    description: 'Empower your institution and learners with AI-proctored Mindsprint exams, comprehensive question banks, instant auto-evaluation, and verified digital certificates.',
     primaryCta: { label: 'Explore Mock Tests', href: '/exams' },
     secondaryCta: { label: 'Watch Demo', href: '#video' },
     image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80',
@@ -39,7 +39,7 @@ export const homepageContent = {
     ],
   },
   journey: {
-    title: 'How Our Online Examination System Works',
+    title: 'How Mindsprint Works',
     description: 'From AI-driven test creation to proctored execution and instant verified results, experience an end-to-end digital assessment workflow.',
     steps: [
       { cls: 'sc_one', num: '01', title: 'Select or Build', line2: 'Exam / Test', text: 'Pick from curated question banks or generate custom AI-assisted test papers with defined marking schemes.' },
@@ -50,7 +50,7 @@ export const homepageContent = {
   },
   about: {
     image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80',
-    title: 'Enterprise-Grade Online Examination & Assessment Ecosystem',
+    title: 'Enterprise-Grade Mindsprint Assessment Ecosystem',
     paragraphs: [
       'Mindsprint is a modern digital examination platform engineered for colleges, schools, coaching institutes, and corporate recruiters to conduct high-stakes assessments with total integrity.',
       'From multi-tier question banks and AI test generation to robust proctoring and automated report cards, our cloud system handles thousands of concurrent exam attempts effortlessly.',
