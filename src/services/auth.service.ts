@@ -21,9 +21,12 @@ interface DbUser {
   first_name: string;
   last_name: string;
   organization_id: string | null;
+  branch_id?: string | null;
   status: string;
   mfa_enabled?: boolean;
   avatar_url?: string | null;
+  created_at?: Date | string | null;
+  email_verified?: boolean | number | null;
 }
 
 export interface AuthTokens {
@@ -73,6 +76,12 @@ async function createRefreshTokenRecord(
   return { token: refreshToken, tokenId };
 }
 
+function toIso(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 async function buildAuthResponse(
   user: DbUser,
   deviceInfo: Record<string, unknown>,
@@ -104,8 +113,12 @@ async function buildAuthResponse(
       phone: (user as any).phone || null,
       avatarUrl: user.avatar_url || null,
       organizationId: user.organization_id,
+      branchId: user.branch_id ?? null,
       status: user.status,
-      lastLoginAt: (user as any).last_login_at || null,
+      emailVerified: Boolean(user.email_verified),
+      mfaEnabled: Boolean(user.mfa_enabled),
+      lastLoginAt: toIso((user as any).last_login_at),
+      createdAt: toIso(user.created_at),
       isFirstLogin: typeof isFirstLogin === "boolean" ? isFirstLogin : !((user as any).last_login_at),
       roles,
     }),
@@ -203,12 +216,12 @@ export async function loginUser(
 
   const result = isEmail
     ? await query<DbUser & { mfa_enabled: boolean; phone: string | null; last_login_at: Date | null }>(
-        `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, status, mfa_enabled, last_login_at
+        `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, branch_id, status, email_verified, mfa_enabled, last_login_at, created_at
          FROM users WHERE email = $1 AND deleted_at IS NULL`,
         [trimmed.toLowerCase()],
       )
     : await query<DbUser & { mfa_enabled: boolean; phone: string | null; last_login_at: Date | null }>(
-        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.phone, u.avatar_url, u.organization_id, u.status, u.mfa_enabled, u.last_login_at
+        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.phone, u.avatar_url, u.organization_id, u.branch_id, u.status, u.email_verified, u.mfa_enabled, u.last_login_at, u.created_at
          FROM users u
          JOIN students s ON s.user_id = u.id
          WHERE LOWER(s.admission_no) = LOWER($1) AND u.deleted_at IS NULL`,
@@ -283,7 +296,7 @@ export async function completeMfaLogin(
   if (!otpRow.rows[0]) throw new UnauthorizedError('Invalid or expired MFA session');
 
   const userResult = await query<DbUser & { phone: string | null; last_login_at: Date | null }>(
-    `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, status, last_login_at
+    `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, branch_id, status, email_verified, mfa_enabled, last_login_at, created_at
      FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
     [otpRow.rows[0].user_id],
   );
@@ -335,7 +348,7 @@ export async function refreshAccessToken(
   await query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1', [stored.id]);
 
   const userResult = await query<DbUser & { phone: string | null; last_login_at: Date | null }>(
-    `SELECT id, email, password_hash, first_name, last_name, phone, organization_id, status, last_login_at
+    `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, branch_id, status, email_verified, mfa_enabled, last_login_at, created_at
      FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
     [stored.user_id],
   );
@@ -373,6 +386,22 @@ export async function getUserProfile(userId: string) {
     throw new NotFoundError('User');
   }
 
+  const row = result.rows[0];
   const roles = await getUserRoles(userId);
-  return { ...result.rows[0], roles };
+  return {
+    id: row.id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    phone: row.phone ?? null,
+    avatarUrl: row.avatar_url ?? null,
+    organizationId: row.organization_id ?? null,
+    branchId: row.branch_id ?? null,
+    status: row.status,
+    emailVerified: Boolean(row.email_verified),
+    mfaEnabled: Boolean(row.mfa_enabled),
+    lastLoginAt: toIso(row.last_login_at),
+    createdAt: toIso(row.created_at),
+    roles,
+  };
 }
