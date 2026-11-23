@@ -331,8 +331,8 @@ export async function sendOrganizationCredentialsEmail(input: {
   return sendEmail({
     to: input.to,
     subject: hasReset
-      ? `Welcome to ${env.APP_NAME} — Set up your ${input.orgName} account`
-      : `Your ${env.APP_NAME} organization login details`,
+      ? `Welcome to MindSprint – Activate Your ${input.orgName} Account`
+      : `Your MindSprint organization login details`,
     html: organizationCredentialsMailTemplate({
       orgName: input.orgName,
       adminName: input.adminName,

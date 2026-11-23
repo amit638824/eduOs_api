@@ -52,7 +52,17 @@ export async function resetPassword(token: string, newPassword: string) {
      ORDER BY created_at DESC LIMIT 1`,
     [tokenHash],
   );
-  if (!row.rows[0]) throw new UnauthorizedError('Invalid or expired reset token');
+  if (!row.rows[0]) {
+    throw new UnauthorizedError('Your password reset link is invalid or has expired. Please request a new one.');
+  }
+
+  const current = await query<{ password_hash: string }>(
+    `SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    [row.rows[0].user_id],
+  );
+  if (current.rows[0] && await verifyPassword(newPassword, current.rows[0].password_hash)) {
+    throw new UnauthorizedError('This password has already been used. Please use another password.');
+  }
 
   const passwordHash = await hashPassword(newPassword);
   await query(`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, [

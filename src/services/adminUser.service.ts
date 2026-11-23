@@ -220,7 +220,7 @@ export async function createUser(
     if (input.role === 'student') {
       void notificationService.notifyUserInApp(
         created.id as string,
-        'Welcome to Mindsprint',
+        'Welcome to MindSprint',
         created.enrollment_no
           ? `Your student account is ready. Enrollment No: ${created.enrollment_no}. Start exploring My Tests.`
           : 'Your student account is ready. Start exploring My Tests.',

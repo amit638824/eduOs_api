@@ -404,16 +404,16 @@ export function organizationCredentialsMailTemplate({
   ];
 
   return wrapEmailBody(`
-    ${heading(isApproved ? 'Welcome to ' + env.APP_NAME : 'Your organization is awaiting approval')}
+    ${heading(isApproved ? 'Welcome to MindSprint!' : 'Your organization is awaiting approval')}
     ${textRow(`Dear ${escapeHtml(first)},`)}
     ${textRow(
       isApproved
-        ? `Your <strong>${escapeHtml(orgName)}</strong> organization account on <strong>${escapeHtml(env.APP_NAME)}</strong> is now active. Click the button below to set your password and access your administrator portal.`
-        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>${escapeHtml(env.APP_NAME)}</strong>. A platform administrator still needs to approve it.`,
+        ? `Your organization account for <strong>${escapeHtml(orgName)}</strong> has been successfully activated on <strong>MindSprint</strong>. To access your administrator portal, please set your password by clicking the button below.`
+        : `<strong>${escapeHtml(orgName)}</strong> has been registered on <strong>MindSprint</strong>. A platform administrator still needs to approve it.`,
     )}
     ${detailTable(details)}
-    ${actionRow(dashboardCta(actionUrl, hasResetLink ? 'Click Here to Set Password' : 'Sign in'))}
-    ${textRow(hasResetLink ? 'Once your password is set, you will be taken directly to your profile setup. This link is valid for 48 hours.' : 'Change this password after your first sign-in. Do not forward this email.')}
+    ${actionRow(dashboardCta(actionUrl, hasResetLink ? 'Set Your Password' : 'Sign in'))}
+    ${textRow(hasResetLink ? 'Once your password is set, you will be redirected to your profile setup page. Note: This link is valid for 48 hours.' : 'Change this password after your first sign-in. Do not forward this email.')}
     ${signoff()}
   `);
 }
