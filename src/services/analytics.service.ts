@@ -1,20 +1,24 @@
 import { query } from '../config/database.js';
 
-export async function getOrganizationStats(organizationId: string) {
+export async function getOrganizationStats(organizationId?: string | null) {
+  const whereOrg = organizationId ? 'WHERE organization_id = $1' : '';
+  const whereTOrg = organizationId ? 'WHERE t.organization_id = $1' : '';
+  const params = organizationId ? [organizationId] : [];
+
   const [core, passRate, buckets, recent, certificates] = await Promise.all([
     query(
       `SELECT
-         (SELECT COUNT(*)::int FROM students WHERE organization_id = $1) AS students,
-         (SELECT COUNT(*)::int FROM teachers WHERE organization_id = $1) AS teachers,
-         (SELECT COUNT(*)::int FROM questions WHERE organization_id = $1 AND archived_at IS NULL) AS questions,
-         (SELECT COUNT(*)::int FROM tests WHERE organization_id = $1 AND archived_at IS NULL) AS tests,
-         (SELECT COUNT(*)::int FROM test_attempts ta JOIN tests t ON t.id = ta.test_id WHERE t.organization_id = $1) AS attempts,
-         (SELECT COUNT(*)::int FROM results r JOIN tests t ON t.id = r.test_id WHERE t.organization_id = $1) AS results,
-         (SELECT COUNT(*)::int FROM branches WHERE organization_id = $1 AND deleted_at IS NULL) AS branches,
+         (SELECT COUNT(*)::int FROM students ${whereOrg}) AS students,
+         (SELECT COUNT(*)::int FROM teachers ${whereOrg}) AS teachers,
+         (SELECT COUNT(*)::int FROM questions ${organizationId ? 'WHERE organization_id = $1 AND' : 'WHERE'} archived_at IS NULL) AS questions,
+         (SELECT COUNT(*)::int FROM tests ${organizationId ? 'WHERE organization_id = $1 AND' : 'WHERE'} archived_at IS NULL) AS tests,
+         (SELECT COUNT(*)::int FROM test_attempts ta JOIN tests t ON t.id = ta.test_id ${whereTOrg}) AS attempts,
+         (SELECT COUNT(*)::int FROM results r JOIN tests t ON t.id = r.test_id ${whereTOrg}) AS results,
+         (SELECT COUNT(*)::int FROM branches ${organizationId ? 'WHERE organization_id = $1 AND' : 'WHERE'} deleted_at IS NULL) AS branches,
          (SELECT COUNT(*)::int FROM test_assignments ta
             JOIN tests t ON t.id = ta.test_id
-           WHERE t.organization_id = $1 AND ta.assignee_type = 'student') AS assignments`,
-      [organizationId],
+           ${organizationId ? 'WHERE t.organization_id = $1 AND' : 'WHERE'} ta.assignee_type = 'student') AS assignments`,
+      params,
     ),
     query(
       `SELECT
@@ -29,8 +33,8 @@ export async function getOrganizationStats(organizationId: string) {
          )::int AS passed
        FROM results r
        JOIN tests t ON t.id = r.test_id
-       WHERE t.organization_id = $1`,
-      [organizationId],
+       ${whereTOrg}`,
+      params,
     ),
     query(
       `SELECT
@@ -40,8 +44,8 @@ export async function getOrganizationStats(organizationId: string) {
          SUM(CASE WHEN r.percentage >= 80 THEN 1 ELSE 0 END)::int AS above_80
        FROM results r
        JOIN tests t ON t.id = r.test_id
-       WHERE t.organization_id = $1`,
-      [organizationId],
+       ${whereTOrg}`,
+      params,
     ),
     query(
       `SELECT t.id, t.title, t.status,
@@ -51,16 +55,16 @@ export async function getOrganizationStats(organizationId: string) {
        FROM tests t
        LEFT JOIN test_attempts ta ON ta.test_id = t.id
        LEFT JOIN results r ON r.test_id = t.id
-       WHERE t.organization_id = $1 AND t.archived_at IS NULL
+       ${organizationId ? 'WHERE t.organization_id = $1 AND' : 'WHERE'} t.archived_at IS NULL
        GROUP BY t.id, t.title, t.status, t.created_at
        ORDER BY t.created_at DESC
        LIMIT 8`,
-      [organizationId],
+      params,
     ),
     query(
       `SELECT COUNT(*)::int AS count FROM certificates
-       WHERE organization_id = $1 AND status = 'issued'`,
-      [organizationId],
+       ${organizationId ? 'WHERE organization_id = $1 AND' : 'WHERE'} status = 'issued'`,
+      params,
     ),
   ]);
 

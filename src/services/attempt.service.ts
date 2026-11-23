@@ -1731,7 +1731,7 @@ export async function getResultByAttemptId(
 }
 
 export async function listAttempts(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   filters?: {
@@ -1740,15 +1740,14 @@ export async function listAttempts(
     search?: string;
   },
 ) {
-  const offset =
-    (page - 1) * limit;
+  const offset = (page - 1) * limit;
+  const params: unknown[] = [];
+  let where = '1=1';
 
-  const params: unknown[] = [
-    organizationId,
-  ];
-
-  let where =
-    't.organization_id = $1';
+  if (organizationId) {
+    params.push(organizationId);
+    where = `t.organization_id = $${params.length}`;
+  }
 
   if (filters?.testId) {
     params.push(
@@ -1951,7 +1950,7 @@ export async function getStudentStats(
 }
 
 export async function listFlaggedAttempts(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   reviewStatus?: string,
@@ -1962,12 +1961,13 @@ export async function listFlaggedAttempts(
     severity?: 'low' | 'medium' | 'high';
   },
 ) {
-  const params: unknown[] = [organizationId];
+  const params: unknown[] = [];
+  let where = '1=1';
 
-  // Without a severity filter, keep the flagged-only list.
-  // A review-status filter always applies, including when severity is set,
-  // so a dismissed attempt cannot remain on the pending list.
-  let where = `t.organization_id = $1`;
+  if (organizationId) {
+    params.push(organizationId);
+    where = `t.organization_id = $${params.length}`;
+  }
 
   if (!filters?.severity) {
     where += ` AND ta.proctoring_flagged = 1`;

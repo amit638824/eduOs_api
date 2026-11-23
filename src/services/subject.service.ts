@@ -3,14 +3,19 @@ import { NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { PaginatedResult } from '../types/express.js';
 
 export async function listSubjects(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   departmentId?: string,
 ) {
   const offset = (page - 1) * limit;
-  const params: unknown[] = [organizationId];
-  let where = 'organization_id = $1 AND is_active = TRUE';
+  const params: unknown[] = [];
+  let where = 'is_active = TRUE';
+
+  if (organizationId) {
+    params.push(organizationId);
+    where += ` AND organization_id = $${params.length}`;
+  }
   if (departmentId) {
     params.push(departmentId);
     where += ` AND department_id = $${params.length}`;

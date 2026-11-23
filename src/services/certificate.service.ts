@@ -468,14 +468,19 @@ export async function listCertificatesForStudent(
 }
 
 export async function listCertificatesForOrg(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   search?: string,
 ) {
   const offset = (page - 1) * limit;
-  const params: unknown[] = [organizationId];
-  let where = 'c.organization_id = $1';
+  const params: unknown[] = [];
+  let where = '1=1';
+
+  if (organizationId) {
+    params.push(organizationId);
+    where = `c.organization_id = $${params.length}`;
+  }
   if (search?.trim()) {
     params.push(`%${search.trim()}%`);
     where += ` AND (

@@ -38,14 +38,20 @@ export interface CreateQuestionInput {
 }
 
 export async function listQuestions(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   filters?: { status?: string; type?: string; search?: string },
 ) {
   const offset = (page - 1) * limit;
-  const params: unknown[] = [organizationId];
-  let where = 'q.organization_id = $1 AND q.archived_at IS NULL';
+  const params: unknown[] = [];
+  let where = 'q.archived_at IS NULL';
+
+  if (organizationId) {
+    params.push(organizationId);
+    where += ` AND q.organization_id = $${params.length}`;
+  }
+
   if (filters?.status) {
     params.push(filters.status);
     where += ` AND q.status = $${params.length}`;
@@ -68,8 +74,10 @@ export async function listQuestions(
     query(
       `SELECT q.id, q.organization_id, q.category_id, q.topic_id, q.type, q.status, q.content, q.marks,
               q.negative_marks, q.difficulty, q.language, q.version, q.created_at, q.updated_at,
-              t.name AS topic_name, s.name AS subject_name, d.name AS department_name
+              t.name AS topic_name, s.name AS subject_name, d.name AS department_name,
+              o.name AS organization_name
        FROM questions q
+       LEFT JOIN organizations o ON o.id = q.organization_id
        LEFT JOIN topics t ON t.id = q.topic_id
        LEFT JOIN chapters c ON c.id = t.chapter_id
        LEFT JOIN subjects s ON s.id = c.subject_id
@@ -90,7 +98,13 @@ export async function listQuestions(
   } satisfies PaginatedResult<unknown>;
 }
 
-export async function getQuestionById(id: string, organizationId: string) {
+export async function getQuestionById(id: string, organizationId?: string) {
+  const params: unknown[] = [id];
+  let where = 'q.id = $1 AND q.archived_at IS NULL';
+  if (organizationId) {
+    params.push(organizationId);
+    where += ` AND q.organization_id = $${params.length}`;
+  }
   const question = await query(
     `SELECT q.id, q.organization_id, q.category_id, q.topic_id, q.type, q.status, q.content, q.explanation,
             q.marks, q.negative_marks, q.difficulty, q.language, q.version, q.created_at, q.updated_at,
@@ -100,8 +114,8 @@ export async function getQuestionById(id: string, organizationId: string) {
      LEFT JOIN chapters c ON c.id = t.chapter_id
      LEFT JOIN subjects s ON s.id = c.subject_id
      LEFT JOIN departments d ON d.id = s.department_id
-     WHERE q.id = $1 AND q.organization_id = $2 AND q.archived_at IS NULL`,
-    [id, organizationId],
+     WHERE ${where}`,
+    params,
   );
   if (!question.rows[0]) throw new NotFoundError('Question');
 
@@ -245,11 +259,17 @@ export async function approveQuestion(id: string, organizationId: string, approv
   return result.rows[0];
 }
 
-export async function listCategories(organizationId: string) {
+export async function listCategories(organizationId?: string | null) {
+  const params: unknown[] = [];
+  let where = '1=1';
+  if (organizationId) {
+    params.push(organizationId);
+    where = 'organization_id = $1';
+  }
   const result = await query(
     `SELECT id, name, parent_id, created_at FROM question_categories
-     WHERE organization_id = $1 ORDER BY name`,
-    [organizationId],
+     WHERE ${where} ORDER BY name`,
+    params,
   );
   return result.rows;
 }

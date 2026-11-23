@@ -33,14 +33,20 @@ async function assertBranchInOrg(branchId: string | undefined, organizationId: s
 }
 
 export async function listUsers(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   filters?: { role?: string; search?: string; status?: string },
 ) {
   const offset = (page - 1) * limit;
-  const params: unknown[] = [organizationId];
-  let where = 'u.organization_id = $1 AND u.deleted_at IS NULL';
+  const params: unknown[] = [];
+  let where = 'u.deleted_at IS NULL';
+
+  if (organizationId) {
+    params.push(organizationId);
+    where += ` AND u.organization_id = $${params.length}`;
+  }
+
   if (filters?.search) {
     params.push(`%${filters.search}%`);
     where += ` AND (
@@ -69,8 +75,9 @@ export async function listUsers(
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.status, u.branch_id, u.created_at,
+      `SELECT u.id, u.organization_id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.status, u.branch_id, u.created_at,
               st.admission_no AS enrollment_no,
+              o.name AS organization_name,
               COALESCE(
                 (SELECT CONCAT(
                    '[',
@@ -83,6 +90,7 @@ export async function listUsers(
                 '[]'
               ) AS roles
        FROM users u
+       LEFT JOIN organizations o ON o.id = u.organization_id
        LEFT JOIN students st ON st.user_id = u.id
        WHERE ${where}
        ORDER BY u.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -239,8 +247,8 @@ export async function updateUser(
 
   return withTransaction(async (client) => {
     const existing = await client.query(
-      `SELECT id FROM users WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL`,
-      [userId, organizationId],
+      `SELECT id FROM users WHERE id = $1 ${organizationId ? 'AND organization_id = $2' : ''} AND deleted_at IS NULL`,
+      organizationId ? [userId, organizationId] : [userId],
     );
     if (!existing.rows[0]) throw new NotFoundError('User');
 
@@ -371,10 +379,10 @@ export async function hardDeleteUser(userId: string, organizationId: string) {
       await client.query(`DELETE FROM students WHERE id = $1`, [studentId]);
     }
 
-    await client.query(`DELETE FROM users WHERE id = $1 AND organization_id = $2`, [
-      userId,
-      organizationId,
-    ]);
+    await client.query(
+      `DELETE FROM users WHERE id = $1 ${organizationId ? 'AND organization_id = $2' : ''}`,
+      organizationId ? [userId, organizationId] : [userId],
+    );
 
     return { message: 'User permanently deleted', id: userId, email: existing.rows[0].email };
   });

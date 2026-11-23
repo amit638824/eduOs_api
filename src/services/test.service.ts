@@ -79,56 +79,73 @@ export interface CreateTestInput {
 }
 
 export async function listTests(
-  organizationId: string,
+  organizationId: string | null | undefined,
   page: number,
   limit: number,
   status?: string,
   search?: string,
 ) {
-  await query(
-    `UPDATE tests
-     SET status = 'completed'
-     WHERE organization_id = $1
-       AND archived_at IS NULL
-       AND status = 'live'
-       AND scheduled_end IS NOT NULL
-       AND scheduled_end < NOW(3)`,
-    [organizationId],
-  );
+  if (organizationId) {
+    await query(
+      `UPDATE tests
+       SET status = 'completed'
+       WHERE organization_id = $1
+         AND archived_at IS NULL
+         AND status = 'live'
+         AND scheduled_end IS NOT NULL
+         AND scheduled_end < NOW(3)`,
+      [organizationId],
+    );
+  } else {
+    await query(
+      `UPDATE tests
+       SET status = 'completed'
+       WHERE archived_at IS NULL
+         AND status = 'live'
+         AND scheduled_end IS NOT NULL
+         AND scheduled_end < NOW(3)`,
+    );
+  }
 
   const offset = (page - 1) * limit;
-  const params: unknown[] = [organizationId];
+  const params: unknown[] = [];
+  let where = 't.archived_at IS NULL';
 
-  let where = 'organization_id = $1 AND archived_at IS NULL';
+  if (organizationId) {
+    params.push(organizationId);
+    where += ` AND t.organization_id = $${params.length}`;
+  }
 
   if (status) {
     params.push(status);
-    where += ` AND status = $${params.length}`;
+    where += ` AND t.status = $${params.length}`;
   }
 
   if (search?.trim()) {
     params.push(`%${search.trim()}%`);
-    where += ` AND (title ILIKE $${params.length} OR CAST(description AS CHAR) ILIKE $${params.length})`;
+    where += ` AND (t.title ILIKE $${params.length} OR CAST(t.description AS CHAR) ILIKE $${params.length})`;
   }
 
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, title, description, status, duration_minutes,
-              passing_marks, total_marks, instructions, config,
-              scheduled_start, scheduled_end, published_at,
-              created_at, updated_at
-       FROM tests
+      `SELECT t.id, t.organization_id, t.title, t.description, t.status, t.duration_minutes,
+              t.passing_marks, t.total_marks, t.instructions, t.config,
+              t.scheduled_start, t.scheduled_end, t.published_at,
+              t.created_at, t.updated_at,
+              o.name AS organization_name
+       FROM tests t
+       LEFT JOIN organizations o ON o.id = t.organization_id
        WHERE ${where}
-       ORDER BY created_at DESC
+       ORDER BY t.created_at DESC
        LIMIT $${params.length - 1}
        OFFSET $${params.length}`,
       params,
     ),
     query(
       `SELECT COUNT(*)::int AS total
-       FROM tests
+       FROM tests t
        WHERE ${where}`,
       params.slice(0, -2),
     ),
@@ -152,18 +169,22 @@ export async function listTests(
 
 export async function getTestById(
   id: string,
-  organizationId: string,
+  organizationId?: string,
 ) {
+  const params: unknown[] = [id];
+  let where = 'id = $1 AND archived_at IS NULL';
+  if (organizationId) {
+    params.push(organizationId);
+    where += ` AND organization_id = $${params.length}`;
+  }
   const test = await query(
     `SELECT id, organization_id, title, description, status,
             config, instructions, duration_minutes, passing_marks,
             total_marks, scheduled_start, scheduled_end,
             published_at, created_at, updated_at
      FROM tests
-     WHERE id = $1
-       AND organization_id = $2
-       AND archived_at IS NULL`,
-    [id, organizationId],
+     WHERE ${where}`,
+    params,
   );
 
   if (!test.rows[0]) {
@@ -217,7 +238,7 @@ export async function getTestById(
 
 export async function listTestAssignments(
   testId: string,
-  organizationId: string,
+  organizationId?: string,
 ) {
   await assertTestOrg(testId, organizationId);
 
@@ -1170,8 +1191,16 @@ export async function recalcTestsForQuestion(
 
 async function assertTestOrg(
   testId: string,
-  organizationId: string,
+  organizationId?: string,
 ) {
+  if (!organizationId) {
+    const result = await query(
+      `SELECT id FROM tests WHERE id = $1 AND archived_at IS NULL`,
+      [testId],
+    );
+    if (!result.rows[0]) throw new NotFoundError('Test');
+    return;
+  }
   const result = await query(
     `SELECT id
      FROM tests
