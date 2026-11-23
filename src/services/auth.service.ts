@@ -23,6 +23,7 @@ interface DbUser {
   organization_id: string | null;
   status: string;
   mfa_enabled?: boolean;
+  avatar_url?: string | null;
 }
 
 export interface AuthTokens {
@@ -101,6 +102,7 @@ async function buildAuthResponse(
       firstName: user.first_name,
       lastName: user.last_name,
       phone: (user as any).phone || null,
+      avatarUrl: user.avatar_url || null,
       organizationId: user.organization_id,
       status: user.status,
       lastLoginAt: (user as any).last_login_at || null,
@@ -201,12 +203,12 @@ export async function loginUser(
 
   const result = isEmail
     ? await query<DbUser & { mfa_enabled: boolean; phone: string | null; last_login_at: Date | null }>(
-        `SELECT id, email, password_hash, first_name, last_name, phone, organization_id, status, mfa_enabled, last_login_at
+        `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, status, mfa_enabled, last_login_at
          FROM users WHERE email = $1 AND deleted_at IS NULL`,
         [trimmed.toLowerCase()],
       )
     : await query<DbUser & { mfa_enabled: boolean; phone: string | null; last_login_at: Date | null }>(
-        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.phone, u.organization_id, u.status, u.mfa_enabled, u.last_login_at
+        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.phone, u.avatar_url, u.organization_id, u.status, u.mfa_enabled, u.last_login_at
          FROM users u
          JOIN students s ON s.user_id = u.id
          WHERE LOWER(s.admission_no) = LOWER($1) AND u.deleted_at IS NULL`,
@@ -281,7 +283,7 @@ export async function completeMfaLogin(
   if (!otpRow.rows[0]) throw new UnauthorizedError('Invalid or expired MFA session');
 
   const userResult = await query<DbUser & { phone: string | null; last_login_at: Date | null }>(
-    `SELECT id, email, password_hash, first_name, last_name, phone, organization_id, status, last_login_at
+    `SELECT id, email, password_hash, first_name, last_name, phone, avatar_url, organization_id, status, last_login_at
      FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
     [otpRow.rows[0].user_id],
   );
@@ -361,7 +363,7 @@ export async function logoutUser(refreshToken: string): Promise<void> {
 
 export async function getUserProfile(userId: string) {
   const result = await query(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.organization_id,
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.organization_id,
             u.branch_id, u.status, u.email_verified, u.mfa_enabled, u.last_login_at, u.created_at
      FROM users u WHERE u.id = $1 AND u.deleted_at IS NULL`,
     [userId],
